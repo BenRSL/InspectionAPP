@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RSLQLD — Review & Sign Off</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --rsl-black: #1A1A2E; --rsl-red: #C01820; --rsl-navy: #1A3A6B;
+  --rsl-pass: #1A7A3C; --rsl-gold: #E8A020;
+  --bg: #F4F4F6; --surface: #fff; --surface2: #F9FAFB;
+  --border: rgba(0,0,0,0.08); --text: #111827; --text2: #6B7280; --text3: #9CA3AF;
+  --radius: 10px; --radius-lg: 14px;
+}
+body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif; background: var(--bg); min-height: 100vh; color: var(--text); }
+
+/* HEADER */
+.header { background: var(--rsl-black); height: 62px; display: flex; align-items: center; justify-content: space-between; padding: 0 20px; border-bottom: 2.5px solid var(--rsl-red); }
+.header-left { display: flex; align-items: center; gap: 14px; }
+.logo { height: 44px; }
+.app-name { border-left: 1px solid rgba(255,255,255,0.18); padding-left: 14px; color: #fff; font-size: 13px; font-weight: 600; letter-spacing: 0.07em; text-transform: uppercase; line-height: 1.3; }
+.app-name small { display: block; font-size: 10px; font-weight: 400; letter-spacing: 0.12em; color: rgba(255,255,255,0.4); }
+.back-btn { background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.18); color: rgba(255,255,255,0.7); font-size: 12px; font-weight: 500; padding: 6px 14px; border-radius: 20px; cursor: pointer; display: flex; align-items: center; gap: 6px; transition: all 0.15s; }
+.back-btn:hover { background: rgba(255,255,255,0.14); color: #fff; }
+
+/* CONTENT */
+.page { max-width: 680px; margin: 0 auto; padding: 24px 20px 60px; }
+
+/* STEP INDICATOR */
+.steps { display: flex; align-items: center; gap: 0; margin-bottom: 28px; }
+.step-item { display: flex; align-items: center; gap: 8px; flex: 1; }
+.step-circle { width: 28px; height: 28px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; flex-shrink: 0; }
+.step-circle.done { background: var(--rsl-pass); color: #fff; }
+.step-circle.active { background: var(--rsl-red); color: #fff; }
+.step-circle.upcoming { background: var(--border); color: var(--text3); border: 1px solid var(--border); }
+.step-name { font-size: 11px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; }
+.step-name.done { color: var(--rsl-pass); }
+.step-name.active { color: var(--rsl-red); }
+.step-name.upcoming { color: var(--text3); }
+.step-line { flex: 1; height: 1.5px; background: var(--border); margin: 0 8px; max-width: 40px; }
+.step-line.done { background: var(--rsl-pass); }
+
+/* FAILS SUMMARY CARD */
+.summary-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); overflow: hidden; margin-bottom: 16px; box-shadow: 0 1px 4px rgba(0,0,0,0.05); }
+.summary-head { padding: 14px 18px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; }
+.summary-title { font-size: 13px; font-weight: 700; color: var(--text); letter-spacing: 0.02em; }
+.summary-sub { font-size: 12px; color: var(--text2); margin-top: 2px; }
+.stat-row { display: flex; gap: 12px; padding: 16px 18px; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+.stat-box { flex: 1; min-width: 80px; background: var(--surface2); border-radius: var(--radius); padding: 12px 14px; border: 1px solid var(--border); }
+.stat-val { font-size: 24px; font-weight: 800; line-height: 1; }
+.stat-val.pass { color: var(--rsl-pass); }
+.stat-val.fail { color: var(--rsl-red); }
+.stat-val.total { color: var(--rsl-navy); }
+.stat-label { font-size: 10px; font-weight: 600; letter-spacing: 0.07em; text-transform: uppercase; color: var(--text3); margin-top: 4px; }
+
+/* FAIL LIST */
+.fail-list { padding: 0; }
+.fail-item { padding: 12px 18px; border-bottom: 1px solid var(--border); display: flex; align-items: flex-start; gap: 12px; }
+.fail-item:last-child { border-bottom: none; }
+.fail-dot { width: 8px; height: 8px; border-radius: 50%; margin-top: 5px; flex-shrink: 0; }
+.fail-dot.clean { background: #F59E0B; }
+.fail-dot.maint { background: var(--rsl-red); }
+.fail-dot.both { background: linear-gradient(135deg, #F59E0B 50%, var(--rsl-red) 50%); }
+.fail-floor { font-size: 10px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text3); min-width: 36px; margin-top: 1px; }
+.fail-info { flex: 1; }
+.fail-name { font-size: 13px; font-weight: 500; color: var(--text); }
+.fail-tags { display: flex; gap: 5px; margin-top: 4px; }
+.fail-tag { font-size: 10px; font-weight: 600; padding: 2px 7px; border-radius: 8px; }
+.fail-tag.c { background: #FEF3C7; color: #92400E; }
+.fail-tag.m { background: #FEE2E2; color: #991B1B; }
+.fail-comment { font-size: 11px; color: var(--text2); margin-top: 3px; font-style: italic; }
+
+/* SIGN OFF FORM */
+.signoff-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); overflow: hidden; margin-bottom: 16px; box-shadow: 0 1px 4px rgba(0,0,0,0.05); }
+.signoff-head { background: var(--rsl-black); padding: 14px 18px; }
+.signoff-head-title { color: #fff; font-size: 13px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; }
+.signoff-head-sub { color: rgba(255,255,255,0.45); font-size: 11px; margin-top: 3px; }
+.signoff-body { padding: 18px; display: flex; flex-direction: column; gap: 14px; }
+.field-group { display: flex; flex-direction: column; gap: 5px; }
+.field-label { font-size: 11px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: var(--text3); }
+.field-input { font-size: 13px; font-family: inherit; padding: 10px 12px; border-radius: var(--radius); border: 1.5px solid var(--border); background: var(--surface2); color: var(--text); outline: none; transition: border-color 0.15s; }
+.field-input:focus { border-color: var(--rsl-navy); background: #fff; }
+.field-input.readonly { background: var(--surface2); color: var(--text2); cursor: default; }
+.field-row { display: flex; gap: 12px; }
+.field-row .field-group { flex: 1; }
+
+/* Confirm checkbox */
+.confirm-wrap { background: #F0FBF4; border: 1.5px solid rgba(26,122,60,0.2); border-radius: var(--radius); padding: 14px 16px; display: flex; align-items: flex-start; gap: 12px; cursor: pointer; transition: background 0.15s; }
+.confirm-wrap:hover { background: #E6F7EC; }
+.confirm-wrap.checked { background: #E6F7EC; border-color: var(--rsl-pass); }
+.confirm-cb { width: 20px; height: 20px; accent-color: var(--rsl-pass); cursor: pointer; flex-shrink: 0; margin-top: 1px; }
+.confirm-text { font-size: 13px; color: var(--text); line-height: 1.5; }
+.confirm-text strong { font-weight: 600; }
+
+/* SUBMIT BUTTON */
+.submit-wrap { padding: 0 18px 18px; }
+.submit-btn { width: 100%; background: var(--rsl-pass); color: #fff; border: none; border-radius: var(--radius); padding: 14px; font-size: 15px; font-weight: 700; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 10px; letter-spacing: 0.02em; transition: opacity 0.15s, transform 0.1s; }
+.submit-btn:hover:not(:disabled) { opacity: 0.9; }
+.submit-btn:active:not(:disabled) { transform: scale(0.99); }
+.submit-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+.submit-btn .lock-icon { font-size: 16px; }
+
+/* SUCCESS OVERLAY */
+.success-overlay { position: fixed; inset: 0; background: rgba(26,26,46,0.75); display: none; align-items: center; justify-content: center; z-index: 200; padding: 20px; }
+.success-overlay.show { display: flex; }
+.success-card { background: #fff; border-radius: var(--radius-lg); padding: 36px 32px; max-width: 420px; width: 100%; text-align: center; box-shadow: 0 20px 60px rgba(0,0,0,0.25); }
+.success-icon { font-size: 52px; margin-bottom: 16px; }
+.success-title { font-size: 22px; font-weight: 800; color: var(--rsl-black); margin-bottom: 8px; }
+.success-sub { font-size: 14px; color: var(--text2); line-height: 1.6; margin-bottom: 24px; }
+.success-meta { background: var(--surface2); border-radius: var(--radius); padding: 12px 16px; margin-bottom: 20px; text-align: left; font-size: 12px; color: var(--text2); line-height: 1.8; }
+.success-meta strong { color: var(--text); font-weight: 600; }
+.email-pill { display: inline-flex; align-items: center; gap: 6px; background: #EFF6FF; color: #1D4ED8; font-size: 11px; font-weight: 500; padding: 4px 10px; border-radius: 20px; border: 1px solid rgba(29,78,216,0.15); margin: 2px; }
+.success-actions { display: flex; gap: 10px; }
+.action-btn { flex: 1; padding: 11px; border-radius: var(--radius); font-size: 13px; font-weight: 600; cursor: pointer; border: none; transition: opacity 0.15s; }
+.action-btn.primary { background: var(--rsl-red); color: #fff; }
+.action-btn.secondary { background: var(--surface2); color: var(--text); border: 1px solid var(--border); }
+.action-btn:hover { opacity: 0.85; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="header-left">
+    <img class="logo" src="data:image/png;base64,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" alt="RSL QLD">
+    <div class="app-name">Inspection App<small>RSL Queensland</small></div>
+  </div>
+  <button class="back-btn" onclick="history.back()">← Back to Inspection</button>
+</div>
+
+<div class="page">
+
+  <!-- Step indicator -->
+  <div class="steps">
+    <div class="step-item">
+      <div class="step-circle done">✓</div>
+      <span class="step-name done">Inspect</span>
+    </div>
+    <div class="step-line done"></div>
+    <div class="step-item">
+      <div class="step-circle active">2</div>
+      <span class="step-name active">Review</span>
+    </div>
+    <div class="step-line"></div>
+    <div class="step-item">
+      <div class="step-circle upcoming">3</div>
+      <span class="step-name upcoming">Submit</span>
+    </div>
+  </div>
+
+  <!-- Fails summary -->
+  <div class="summary-card">
+    <div class="summary-head">
+      <div>
+        <div class="summary-title">Anzac House — Ground Floor Inspection</div>
+        <div class="summary-sub">June 2026 &nbsp;·&nbsp; 32 items inspected</div>
+      </div>
+    </div>
+    <div class="stat-row">
+      <div class="stat-box"><div class="stat-val total">32</div><div class="stat-label">Total Items</div></div>
+      <div class="stat-box"><div class="stat-val pass">27</div><div class="stat-label">All Pass</div></div>
+      <div class="stat-box"><div class="stat-val fail">5</div><div class="stat-label">Fails</div></div>
+    </div>
+    <div class="fail-list">
+      <div class="fail-item">
+        <div class="fail-dot maint"></div>
+        <div class="fail-floor">GF</div>
+        <div class="fail-info">
+          <div class="fail-name">Reception</div>
+          <div class="fail-tags"><span class="fail-tag m">🔧 Maintenance</span></div>
+          <div class="fail-comment">Paint peeling near skirting board — patch paint required</div>
+        </div>
+      </div>
+      <div class="fail-item">
+        <div class="fail-dot both"></div>
+        <div class="fail-floor">GF</div>
+        <div class="fail-info">
+          <div class="fail-name">Toilets</div>
+          <div class="fail-tags"><span class="fail-tag c">🧹 Cleaning</span><span class="fail-tag m">🔧 Maintenance</span></div>
+          <div class="fail-comment">Deep clean required · Tap dripping — log with maintenance</div>
+        </div>
+      </div>
+      <div class="fail-item">
+        <div class="fail-dot clean"></div>
+        <div class="fail-floor">GF</div>
+        <div class="fail-info">
+          <div class="fail-name">Kitchen</div>
+          <div class="fail-tags"><span class="fail-tag c">🧹 Cleaning</span></div>
+          <div class="fail-comment">Splashback stained — steam clean required</div>
+        </div>
+      </div>
+      <div class="fail-item">
+        <div class="fail-dot maint"></div>
+        <div class="fail-floor">Roof</div>
+        <div class="fail-info">
+          <div class="fail-name">Roof Membrane</div>
+          <div class="fail-tags"><span class="fail-tag m">🔧 Maintenance</span></div>
+          <div class="fail-comment">Ponding water noted near north parapet — monitor / inspect after rain</div>
+        </div>
+      </div>
+      <div class="fail-item">
+        <div class="fail-dot clean"></div>
+        <div class="fail-floor">B2</div>
+        <div class="fail-info">
+          <div class="fail-name">Carpark Driveway</div>
+          <div class="fail-tags"><span class="fail-tag c">🧹 Cleaning</span></div>
+          <div class="fail-comment">Oil stain noted near entry ramp</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Sign off form -->
+  <div class="signoff-card">
+    <div class="signoff-head">
+      <div class="signoff-head-title">✍️ Inspector Sign-Off</div>
+      <div class="signoff-head-sub">Review the fails above, then confirm and submit to lock this inspection and send the report.</div>
+    </div>
+    <div class="signoff-body">
+      <div class="field-row">
+        <div class="field-group">
+          <label class="field-label">Inspector Name</label>
+          <input class="field-input" id="inspectorName" type="text" value="Ben Carey" placeholder="Your full name">
+        </div>
+        <div class="field-group">
+          <label class="field-label">Role / Title</label>
+          <input class="field-input" type="text" placeholder="e.g. Facilities Manager" value="Assets Manager">
+        </div>
+      </div>
+      <div class="field-row">
+        <div class="field-group">
+          <label class="field-label">Site</label>
+          <input class="field-input readonly" type="text" value="Anzac House" readonly>
+        </div>
+        <div class="field-group">
+          <label class="field-label">Date &amp; Time</label>
+          <input class="field-input readonly" id="autoTime" type="text" readonly>
+        </div>
+      </div>
+      <div class="field-group">
+        <label class="field-label">Additional Notes (optional)</label>
+        <input class="field-input" type="text" placeholder="e.g. Follow-up required on roof membrane before next wet season">
+      </div>
+
+      <!-- Confirm checkbox -->
+      <div class="confirm-wrap" id="confirmWrap" onclick="toggleConfirm()">
+        <input class="confirm-cb" type="checkbox" id="confirmCb" onclick="event.stopPropagation();toggleConfirm()">
+        <div class="confirm-text">
+          I confirm this inspection of <strong>Anzac House</strong> is complete and accurate to the best of my knowledge.
+          Submitting will lock this inspection and email the report to the assets team.
+        </div>
+      </div>
+    </div>
+
+    <div class="submit-wrap">
+      <button class="submit-btn" id="submitBtn" disabled onclick="handleSubmit()">
+        <span class="lock-icon">🔒</span>
+        Submit Inspection &amp; Send Report
+      </button>
+    </div>
+  </div>
+
+</div>
+
+<!-- Success overlay -->
+<div class="success-overlay" id="successOverlay">
+  <div class="success-card">
+    <div class="success-icon">✅</div>
+    <div class="success-title">Inspection Submitted</div>
+    <div class="success-sub">This inspection has been locked and the report has been sent to the assets team.</div>
+    <div class="success-meta">
+      <strong>Site:</strong> Anzac House<br>
+      <strong>Inspector:</strong> <span id="successName">Ben Carey</span><br>
+      <strong>Submitted:</strong> <span id="successTime"></span><br>
+      <strong>Report sent to:</strong><br>
+      <span class="email-pill">✉️ assets@rslqld.org</span>
+      <span class="email-pill">✉️ ben.carey@rslqld.org</span>
+      <span class="email-pill">✉️ matt.sparnon@rslqld.org</span>
+    </div>
+    <div class="success-actions">
+      <button class="action-btn secondary" onclick="document.getElementById('successOverlay').classList.remove('show')">View Report</button>
+      <button class="action-btn primary" onclick="document.getElementById('successOverlay').classList.remove('show')">Done</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// Auto-fill timestamp
+function formatDate(d) {
+  const days = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
+  const months = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+  const h = d.getHours(), m = d.getMinutes();
+  const ampm = h >= 12 ? "pm" : "am";
+  const hh = h % 12 || 12;
+  const mm = m.toString().padStart(2,"0");
+  return `${days[d.getDay()]} ${d.getDate()} ${months[d.getMonth()]} ${d.getFullYear()}, ${hh}:${mm}${ampm}`;
+}
+document.getElementById("autoTime").value = formatDate(new Date());
+
+// Confirm checkbox
+let confirmed = false;
+function toggleConfirm() {
+  confirmed = !confirmed;
+  document.getElementById("confirmCb").checked = confirmed;
+  document.getElementById("confirmWrap").classList.toggle("checked", confirmed);
+  document.getElementById("submitBtn").disabled = !confirmed;
+}
+
+// Submit
+function handleSubmit() {
+  const name = document.getElementById("inspectorName").value || "Inspector";
+  document.getElementById("successName").textContent = name;
+  document.getElementById("successTime").textContent = formatDate(new Date());
+  document.getElementById("successOverlay").classList.add("show");
+}
+</script>
+</body>
+</html>
