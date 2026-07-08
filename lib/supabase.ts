@@ -1,4 +1,4 @@
-import { createBrowserClient, createServerClient } from '@supabase/ssr';
+import { createBrowserClient, createServerClient, type CookieOptions } from '@supabase/ssr';
 import { cookies } from 'next/headers';
 
 // Client-side (components with 'use client')
@@ -9,7 +9,7 @@ export function supabaseBrowser() {
   );
 }
 
-// Server-side (server components, route handlers)
+// Server-side (server components, route handlers, server actions)
 export function supabaseServer() {
   const cookieStore = cookies();
   return createServerClient(
@@ -19,6 +19,22 @@ export function supabaseServer() {
       cookies: {
         get(name: string) {
           return cookieStore.get(name)?.value;
+        },
+        set(name: string, value: string, options: CookieOptions) {
+          try {
+            cookieStore.set({ name, value, ...options });
+          } catch {
+            // Called from a Server Component (not a Server Action / Route Handler).
+            // Next.js forbids writing cookies here — safe to ignore as long as
+            // middleware is also refreshing the session (see middleware.ts).
+          }
+        },
+        remove(name: string, options: CookieOptions) {
+          try {
+            cookieStore.set({ name, value: '', ...options });
+          } catch {
+            // Same read-only-context caveat as set() above.
+          }
         },
       },
     }
