@@ -1,0 +1,541 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RSLQLD Inspection App — Tutorial</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;}
+:root{
+  --black:#1A1A2E;--red:#C01820;--navy:#1A3A6B;--gold:#E8A020;
+  --pass:#1A7A3C;--warn:#D97706;
+  --bg:#F0F2F5;--surface:#fff;--surface2:#F8F9FA;
+  --border:rgba(0,0,0,0.08);--text:#111827;--text2:#6B7280;--text3:#9CA3AF;
+  --radius:10px;--radius-lg:14px;
+}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif;background:var(--bg);color:var(--text);min-height:100vh;}
+
+.header{background:var(--black);height:62px;display:flex;align-items:center;justify-content:space-between;padding:0 24px;border-bottom:2.5px solid var(--red);position:sticky;top:0;z-index:100;}
+.header-left{display:flex;align-items:center;gap:14px;}
+.logo{height:44px;}
+.app-name{border-left:1px solid rgba(255,255,255,0.18);padding-left:14px;color:#fff;font-size:13px;font-weight:600;letter-spacing:0.07em;text-transform:uppercase;line-height:1.3;}
+.app-name small{display:block;font-size:10px;font-weight:400;letter-spacing:0.12em;color:rgba(255,255,255,0.4);}
+.header-right{display:flex;align-items:center;gap:10px;}
+.export-btn{display:flex;align-items:center;gap:6px;border:none;border-radius:8px;padding:7px 14px;font-size:12px;font-weight:600;cursor:pointer;transition:opacity 0.15s;}
+.export-btn.pdf{background:var(--red);color:#fff;}
+.export-btn.email{background:var(--navy);color:#fff;}
+.export-btn:hover{opacity:0.88;}
+
+/* ROLE SELECTOR */
+.role-bar{background:var(--surface);border-bottom:1px solid var(--border);padding:14px 24px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;}
+.role-label{font-size:12px;font-weight:700;letter-spacing:0.07em;text-transform:uppercase;color:var(--text3);}
+.role-btn{padding:7px 18px;border-radius:20px;font-size:13px;font-weight:600;cursor:pointer;border:1.5px solid var(--border);background:var(--surface2);color:var(--text2);transition:all 0.15s;}
+.role-btn.active.inspector{background:var(--pass);border-color:var(--pass);color:#fff;}
+.role-btn.active.admin{background:var(--navy);border-color:var(--navy);color:#fff;}
+.role-btn.active.god{background:var(--red);border-color:var(--red);color:#fff;}
+
+/* LAYOUT */
+.layout{display:flex;max-width:1100px;margin:0 auto;padding:24px;gap:24px;align-items:flex-start;}
+.sidebar{width:220px;flex-shrink:0;position:sticky;top:86px;}
+.sidebar-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);overflow:hidden;}
+.sidebar-head{background:var(--black);padding:12px 16px;font-size:11px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:rgba(255,255,255,0.6);}
+.sidebar-item{padding:10px 16px;border-bottom:1px solid var(--border);cursor:pointer;font-size:13px;color:var(--text2);transition:all 0.15s;display:flex;align-items:center;gap:8px;}
+.sidebar-item:last-child{border-bottom:none;}
+.sidebar-item:hover{background:var(--surface2);color:var(--text);}
+.sidebar-item.active{background:#EEF2FF;color:var(--navy);font-weight:600;}
+.sidebar-item .step-num{width:20px;height:20px;border-radius:50%;background:var(--border);color:var(--text3);font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+.sidebar-item.active .step-num{background:var(--navy);color:#fff;}
+.sidebar-item.done .step-num{background:var(--pass);color:#fff;}
+.progress-mini{height:3px;background:var(--border);margin:0;}
+.progress-mini-fill{height:100%;background:var(--pass);transition:width 0.4s;}
+
+.main{flex:1;min-width:0;}
+
+/* STEP CARD */
+.step-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);overflow:hidden;margin-bottom:16px;box-shadow:0 1px 3px rgba(0,0,0,0.04);}
+.step-card.hidden{display:none;}
+.step-head{background:var(--black);padding:16px 22px;display:flex;align-items:center;gap:14px;}
+.step-num-lg{width:36px;height:36px;border-radius:50%;background:var(--red);color:#fff;font-size:15px;font-weight:800;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+.step-num-lg.done{background:var(--pass);}
+.step-title{color:#fff;font-size:15px;font-weight:700;}
+.step-sub{color:rgba(255,255,255,0.5);font-size:11px;margin-top:2px;}
+.step-body{padding:20px 22px;}
+.step-body p{font-size:13px;color:var(--text);line-height:1.7;margin-bottom:12px;}
+.step-body p:last-child{margin-bottom:0;}
+
+/* VISUAL DEMO BLOCKS */
+.demo-block{background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius);padding:14px 16px;margin:14px 0;font-size:12px;}
+.demo-label{font-size:10px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:var(--text3);margin-bottom:8px;}
+.demo-row{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border);}
+.demo-row:last-child{border-bottom:none;}
+.demo-item-name{flex:1;font-size:13px;font-weight:500;color:var(--text);}
+.demo-pf{display:flex;border-radius:6px;overflow:hidden;border:1px solid #E5E7EB;}
+.demo-pf-btn{padding:4px 10px;font-size:11px;font-weight:600;background:#F9FAFB;color:#9CA3AF;border:none;cursor:default;}
+.demo-pf-btn.pass{background:var(--pass);color:#fff;}
+.demo-pf-btn.fail{background:var(--red);color:#fff;}
+.fail-demo{background:#FFF8F8;border:1px solid rgba(192,24,32,0.15);border-radius:8px;padding:10px 12px;margin-top:8px;}
+.fail-demo-head{font-size:10px;font-weight:700;letter-spacing:0.07em;text-transform:uppercase;color:var(--red);margin-bottom:6px;}
+.sug-pills-demo{display:flex;gap:5px;flex-wrap:wrap;margin-top:6px;}
+.sug-pill-demo{font-size:11px;padding:3px 10px;border-radius:12px;background:#EFF6FF;color:#1D4ED8;border:1px solid rgba(29,78,216,0.2);}
+.complete-bar-demo{background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:8px 12px;margin-top:8px;display:flex;align-items:center;justify-content:space-between;}
+.complete-btn-demo{background:var(--pass);color:#fff;border:none;border-radius:6px;padding:6px 12px;font-size:11px;font-weight:700;cursor:default;}
+
+/* CALLOUT BOXES */
+.callout{border-radius:var(--radius);padding:12px 16px;margin:12px 0;font-size:12px;line-height:1.6;}
+.callout.tip{background:#EFF6FF;border-left:3px solid #1D4ED8;color:#1D4ED8;}
+.callout.warn{background:#FEF3C7;border-left:3px solid var(--warn);color:#92400E;}
+.callout.note{background:#F0FBF4;border-left:3px solid var(--pass);color:#166534;}
+.callout strong{font-weight:700;}
+
+/* STEP NAV */
+.step-nav{display:flex;gap:10px;margin-top:8px;justify-content:space-between;align-items:center;}
+.nav-btn{padding:9px 20px;border-radius:var(--radius);font-size:13px;font-weight:600;cursor:pointer;border:1.5px solid var(--border);background:var(--surface2);color:var(--text2);transition:all 0.15s;}
+.nav-btn.primary{background:var(--navy);border-color:var(--navy);color:#fff;}
+.nav-btn:hover{opacity:0.85;}
+.step-counter{font-size:12px;color:var(--text3);}
+
+/* PERMISSION TABLE */
+.perm-table{width:100%;border-collapse:collapse;font-size:12px;margin:12px 0;}
+.perm-table th{background:var(--black);color:#fff;padding:8px 12px;text-align:left;font-size:10px;font-weight:700;letter-spacing:0.07em;text-transform:uppercase;}
+.perm-table td{padding:9px 12px;border-bottom:1px solid var(--border);}
+.perm-table tr:last-child td{border-bottom:none;}
+.perm-table tr:nth-child(even) td{background:var(--surface2);}
+.yes{color:var(--pass);font-weight:700;}
+.no{color:var(--text3);}
+.partial{color:var(--warn);font-weight:600;font-size:11px;}
+
+.toast{position:fixed;top:80px;right:20px;background:var(--black);color:#fff;padding:10px 16px;border-radius:var(--radius);font-size:12px;font-weight:500;z-index:200;box-shadow:0 4px 12px rgba(0,0,0,0.2);opacity:0;transform:translateY(-6px);transition:opacity 0.25s,transform 0.25s;pointer-events:none;max-width:300px;}
+.toast.show{opacity:1;transform:translateY(0);}
+
+@media print{
+  .header-right,.role-bar,.sidebar,.step-nav,.export-btn{display:none!important;}
+  .layout{padding:0;}
+  .step-card.hidden{display:block!important;}
+  .main{width:100%;}
+  body{background:#fff;}
+}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="header-left">
+    <img class="logo" src="data:image/png;base64,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" alt="RSL QLD">
+    <div class="app-name">Inspector Tutorial<small>RSL Queensland</small></div>
+  </div>
+  <div class="header-right">
+    <button class="export-btn pdf" onclick="window.print()">🖨️ Print / PDF</button>
+    <button class="export-btn email" onclick="showToast('Tutorial PDF emailed to your account')">✉️ Email to me</button>
+  </div>
+</div>
+
+<div class="role-bar">
+  <span class="role-label">I am a:</span>
+  <button class="role-btn active inspector" onclick="setRole('inspector',this)">Inspector</button>
+  <button class="role-btn admin" onclick="setRole('admin',this)">Admin</button>
+  <button class="role-btn god" onclick="setRole('god',this)">God Mode</button>
+</div>
+
+<div class="layout">
+  <!-- Sidebar progress -->
+  <div class="sidebar">
+    <div class="sidebar-card">
+      <div class="sidebar-head">Tutorial Progress</div>
+      <div class="progress-mini"><div class="progress-mini-fill" id="progressFill" style="width:0%"></div></div>
+      <div id="sidebarItems"></div>
+    </div>
+  </div>
+
+  <!-- Steps -->
+  <div class="main" id="stepsContainer"></div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+let currentRole = 'inspector';
+let currentStep = 0;
+let completedSteps = new Set();
+
+const ROLES = {
+  inspector: {
+    label: 'Inspector',
+    color: '#1A7A3C',
+    steps: [
+      {
+        title: 'Welcome to the RSLQLD Inspection App',
+        sub: 'Getting started',
+        content: `
+          <p>This app replaces paper-based inspection checklists for all RSL Queensland managed properties. It's designed to be fast, accurate, and easy to use — even in basements and plant rooms with poor signal.</p>
+          <p>You'll use it to complete your monthly inspection, recording Pass or Fail for each area's cleanliness and maintenance condition, adding comments and photos for any fails, then submitting a report that goes straight to the assets team.</p>
+          <div class="callout tip"><strong>💡 Tip:</strong> The app works offline. If you lose signal mid-inspection, keep going — everything saves locally and syncs automatically when you reconnect.</div>
+          <p>This tutorial will walk you through every step. It should take about 5 minutes to read.</p>
+        `
+      },
+      {
+        title: 'Selecting your site',
+        sub: 'Site switcher',
+        content: `
+          <p>When you open the app, you'll see the <strong>site switcher</strong> at the top — a scrollable row of all sites you've been assigned to. Tap the site you're about to inspect.</p>
+          <div class="demo-block">
+            <div class="demo-label">Site switcher — example</div>
+            <div style="display:flex;gap:6px;overflow-x:auto;padding:4px 0;">
+              <div style="flex-shrink:0;padding:7px 14px;border-bottom:2px solid #C01820;text-align:center;background:#1A1A2E;border-radius:6px 6px 0 0;">
+                <div style="font-size:9px;color:rgba(255,255,255,0.4);text-transform:uppercase;letter-spacing:0.1em;">Brisbane CBD</div>
+                <div style="font-size:12px;color:#fff;font-weight:600;">Anzac House</div>
+              </div>
+              <div style="flex-shrink:0;padding:7px 14px;text-align:center;background:#1A1A2E;opacity:0.5;border-radius:6px 6px 0 0;">
+                <div style="font-size:9px;color:rgba(255,255,255,0.4);text-transform:uppercase;letter-spacing:0.1em;">Brisbane CBD</div>
+                <div style="font-size:12px;color:rgba(255,255,255,0.5);font-weight:500;">100 Wickham</div>
+              </div>
+            </div>
+          </div>
+          <div class="callout note"><strong>✓ Note:</strong> You'll only see the sites you've been assigned to. If a site is missing, contact your admin.</div>
+        `
+      },
+      {
+        title: 'Starting your inspection',
+        sub: 'Start screen',
+        content: `
+          <p>After selecting your site, you'll see a <strong>Start Inspection</strong> screen showing the site name, your name, and today's date. Tap <strong>▶ Start Inspection</strong> to begin.</p>
+          <p>If you were already mid-inspection and had to stop, the screen will show <strong>Continue Inspection</strong> instead — your progress is saved and waiting for you.</p>
+          <div class="callout tip"><strong>💡 Tip:</strong> You can stop and restart an inspection at any time without losing your work. The app saves automatically every time you record a Pass or Fail.</div>
+        `
+      },
+      {
+        title: 'Recording Pass or Fail',
+        sub: 'The checklist',
+        content: `
+          <p>The main inspection screen shows your floors as tabs at the top (B2, B1, GF, L1...). Tap a floor tab to see that floor's checklist.</p>
+          <p>Each item has two sets of buttons: <strong>Cleaning</strong> (cleanliness and presentation) and <strong>Maintenance</strong> (physical condition and repairs). Tap either ✓ Pass or ✗ Fail for each.</p>
+          <div class="demo-block">
+            <div class="demo-label">Live example — try tapping the buttons</div>
+            <div class="demo-row">
+              <span class="demo-item-name">Toilets</span>
+              <span style="font-size:10px;font-weight:600;color:#9CA3AF;text-transform:uppercase;margin-right:4px;">Clean</span>
+              <div class="demo-pf" id="cleanPF">
+                <button class="demo-pf-btn" onclick="demoToggle('clean','pass')">✓ Pass</button>
+                <button class="demo-pf-btn" onclick="demoToggle('clean','fail')">✗ Fail</button>
+              </div>
+              <span style="font-size:10px;font-weight:600;color:#9CA3AF;text-transform:uppercase;margin:0 4px;">Maint.</span>
+              <div class="demo-pf" id="maintPF">
+                <button class="demo-pf-btn" onclick="demoToggle('maint','pass')">✓ Pass</button>
+                <button class="demo-pf-btn" onclick="demoToggle('maint','fail')">✗ Fail</button>
+              </div>
+            </div>
+            <div id="failExpand" style="display:none">
+              <div class="fail-demo">
+                <div class="fail-demo-head">🧹 Cleaning Fail — Toilets</div>
+                <textarea style="width:100%;font-size:12px;padding:6px 8px;border-radius:6px;border:1px solid #E5E7EB;resize:none;font-family:inherit;" rows="2" placeholder="Describe the cleaning issue..."></textarea>
+                <div class="sug-pills-demo">
+                  <span class="sug-pill-demo">Deep clean required</span>
+                  <span class="sug-pill-demo">Grout discolouration</span>
+                  <span class="sug-pill-demo">Mould present</span>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="callout tip"><strong>💡 Tip:</strong> When you mark an item as Fail, a comment field opens automatically with suggested comments — tap a suggestion to fill it in instantly.</div>
+          <div class="callout warn"><strong>⚠ Important:</strong> Cleaning and Maintenance are recorded separately. An area can have a Cleaning Pass and a Maintenance Fail at the same time.</div>
+        `
+      },
+      {
+        title: 'Adding comments and photos',
+        sub: 'Documenting fails',
+        content: `
+          <p>When you mark any item as Fail, the app opens a detail panel with:</p>
+          <ul style="padding-left:18px;font-size:13px;color:var(--text);line-height:2;">
+            <li>A <strong>comment field</strong> — describe what you found</li>
+            <li><strong>Suggested comments</strong> — tap a pill to fill the comment instantly</li>
+            <li><strong>Photo upload</strong> — up to 2 photos per fail type (camera or file)</li>
+            <li>A <strong>photo caption</strong> field with suggestions (e.g. "Steam clean required", "Area overview")</li>
+          </ul>
+          <div class="callout tip"><strong>💡 Tip:</strong> Comments and photos appear directly in the final report beside each fail. The more detail you add, the more useful the report is for whoever is actioning the repairs.</div>
+          <div class="callout note"><strong>📷 Photos:</strong> On mobile, you can take a photo directly from your camera. On desktop, upload a file. Maximum 2 photos per fail type (cleaning and maintenance each get their own photos).</div>
+        `
+      },
+      {
+        title: 'Zone photos and naming spaces',
+        sub: 'Area-level features',
+        content: `
+          <p>At the top of each area card, you'll see a <strong>📷 Zone photo</strong> button. This is an optional reference photo of the whole area — useful for contractors who've never visited the site. It appears in the report beside the area heading.</p>
+          <p>Some areas may show an <strong>✏️ Tap to name this space</strong> prompt. This means the space hasn't been officially named yet. Tap it, type the real name (e.g. "Finance Office"), and tap <strong>✓ Confirm</strong>. If you can't identify the space, tap <strong>Skip</strong> and come back next visit.</p>
+          <div class="callout note"><strong>✓ Note:</strong> Once you confirm a name, it locks after 3 inspections. After that, only an admin can change it.</div>
+        `
+      },
+      {
+        title: 'Saving your progress',
+        sub: 'Area complete & auto-save',
+        content: `
+          <p>The app auto-saves every time you tap Pass or Fail. You'll see the save indicator in the bottom bar ("Saved just now" / "Saved 2min ago").</p>
+          <p>When you've finished all items in an area, tap the green <strong>✓ Mark area complete</strong> button at the bottom of that area card. This locks the area and gives you a clear visual confirmation that it's done.</p>
+          <div class="demo-block">
+            <div class="demo-label">Area complete bar</div>
+            <div class="complete-bar-demo">
+              <span style="font-size:11px;color:#6B7280;">8 of 8 items recorded</span>
+              <div class="complete-btn-demo">✓ Mark area complete</div>
+            </div>
+          </div>
+          <div class="callout tip"><strong>💡 Tip:</strong> Work floor by floor and mark each area complete as you go. If you're interrupted, completed areas stay locked — you only need to pick up where you left off.</div>
+        `
+      },
+      {
+        title: 'Needs Attention view',
+        sub: 'Reviewing fails',
+        content: `
+          <p>Above the floor tabs, you'll see two view buttons: <strong>📋 Floor View</strong> and <strong>⚠️ Needs Attention</strong>. The Needs Attention view shows every fail across all floors in a single list — so you don't need to navigate floor by floor to review your work.</p>
+          <p>The number in the Needs Attention button updates in real time as you record fails. Use this view before signing off to make sure nothing's been missed.</p>
+          <div class="callout warn"><strong>🔁 Recurring fails:</strong> If an item shows an orange "Recurring" flag, it means the same issue has been logged 3+ times in a row. Make sure the comment and photos are detailed enough to escalate this properly.</div>
+        `
+      },
+      {
+        title: 'Asking RIA',
+        sub: 'Your AI assistant',
+        content: `
+          <p><strong>RIA</strong> (RSL Inspection Assistant) is the 🎖️ button in the bottom-right corner. Tap it to open a chat panel where you can ask questions about your inspection.</p>
+          <p>RIA knows your current site, floor, and progress. Useful questions to ask:</p>
+          <ul style="padding-left:18px;font-size:13px;color:var(--text);line-height:2.2;">
+            <li>"What's incomplete?"</li>
+            <li>"Any fails so far?"</li>
+            <li>"Suggest a comment for this item"</li>
+            <li>"How far through am I?"</li>
+          </ul>
+          <div class="callout tip"><strong>💡 Tip:</strong> RIA learns from past inspections. If the same comment has been used 3+ times for an item, RIA will suggest it automatically the moment you mark that item as Fail.</div>
+        `
+      },
+      {
+        title: 'Signing off and submitting',
+        sub: 'Completing the inspection',
+        content: `
+          <p>When all items are recorded, tap <strong>📋 Review &amp; Sign Off</strong> in the bottom bar. This opens a summary screen showing:</p>
+          <ul style="padding-left:18px;font-size:13px;color:var(--text);line-height:2;">
+            <li>All fails across the inspection</li>
+            <li>Your name (pre-filled), date/time (auto), and an optional notes field</li>
+            <li>A confirmation checkbox</li>
+          </ul>
+          <p>Tick the confirmation box and tap <strong>Submit Inspection &amp; Send Report</strong>. That's it — the inspection locks immediately and the report is emailed to the assets team automatically.</p>
+          <div class="callout note"><strong>✓ Note:</strong> Once submitted, the inspection is locked. If you need to make a change, contact your admin.</div>
+          <div class="callout tip"><strong>💡 You're done!</strong> The full report (branded, with all fail details and photos) is generated and sent automatically. You don't need to do anything else.</div>
+        `
+      },
+    ]
+  },
+  admin: {
+    label: 'Admin',
+    color: '#1A3A6B',
+    steps: [
+      {
+        title: 'Admin portal overview',
+        sub: 'What admins can do',
+        content: `
+          <p>As an Admin, you manage the inspection setup for your assigned sites. You don't need any technical knowledge — everything is done through the Admin portal using simple forms and lists.</p>
+          <table class="perm-table">
+            <thead><tr><th>Action</th><th>You (Admin)</th><th>Inspector</th></tr></thead>
+            <tbody>
+              <tr><td>Complete inspections</td><td class="yes">✓ Yes</td><td class="yes">✓ Yes</td></tr>
+              <tr><td>Edit checklist items</td><td class="yes">✓ Assigned sites</td><td class="no">✗ No</td></tr>
+              <tr><td>Invite new inspectors</td><td class="yes">✓ Yes</td><td class="no">✗ No</td></tr>
+              <tr><td>Edit predictive text</td><td class="yes">✓ Yes</td><td class="no">✗ No</td></tr>
+              <tr><td>View all reports</td><td class="yes">✓ Assigned sites</td><td class="partial">Own only</td></tr>
+              <tr><td>Add new sites</td><td class="no">✗ No</td><td class="no">✗ No</td></tr>
+              <tr><td>Manage all users</td><td class="no">✗ No</td><td class="no">✗ No</td></tr>
+            </tbody>
+          </table>
+        `
+      },
+      {
+        title: 'Editing checklists',
+        sub: 'Checklist editor',
+        content: `
+          <p>Go to <strong>Admin Portal → Checklist Editor</strong>. Select your site and floor, then:</p>
+          <ul style="padding-left:18px;font-size:13px;color:var(--text);line-height:2.2;">
+            <li>Add a new item with the text field at the bottom of each area</li>
+            <li>Rename an item by clicking <strong>Edit</strong></li>
+            <li>Reorder items by dragging the ⠿ handle</li>
+            <li>Delete an item (data is retained, item is hidden from inspectors)</li>
+            <li>Confirm unconfirmed placeholder names</li>
+          </ul>
+          <div class="callout warn"><strong>⚠ Caution:</strong> Deleting a checklist item hides it from future inspections but keeps all historical data. This cannot be undone by inspectors.</div>
+        `
+      },
+      {
+        title: 'Managing predictive text',
+        sub: 'Suggestions library',
+        content: `
+          <p>Go to <strong>Admin Portal → Predictive Text</strong>. Select an area (e.g. Kitchen) and you'll see the current suggestion list, ranked by how often each has been used.</p>
+          <p>You can add new suggestions, delete unhelpful ones, or reorder them. The top 5 suggestions for each item appear first in the inspector's comment field.</p>
+          <div class="callout tip"><strong>💡 Tip:</strong> Keep suggestions short and action-oriented. "Steam clean required" is better than "The area requires a thorough steam clean by the cleaning contractor".</div>
+          <div class="callout note"><strong>✓ Note:</strong> Suggestions are split by category — Cleaning suggestions and Maintenance suggestions are managed separately and never mix.</div>
+        `
+      },
+      {
+        title: 'Inviting users',
+        sub: 'User management',
+        content: `
+          <p>Go to <strong>Admin Portal → Users</strong>. To invite a new inspector:</p>
+          <ul style="padding-left:18px;font-size:13px;color:var(--text);line-height:2.2;">
+            <li>Enter their email address</li>
+            <li>Set their role (Inspector)</li>
+            <li>Assign them to one or more sites</li>
+            <li>Click <strong>Send Invite</strong></li>
+          </ul>
+          <p>The new user receives a magic link by email. They click it to set their password and gain access immediately.</p>
+          <div class="callout note"><strong>✓ Note:</strong> Admins can only invite Inspectors. To promote someone to Admin, contact God Mode (ben.carey@rslqld.org).</div>
+        `
+      },
+      {
+        title: 'Viewing reports',
+        sub: 'Report archive',
+        content: `
+          <p>Go to <strong>Admin Portal → Report Archive</strong>. You can search by site, month, or inspector name. Reports are stored as a lightweight history list — the full PDF is generated on demand and emailed to the configured recipients.</p>
+          <div class="callout tip"><strong>💡 Tip:</strong> Full PDF reports are also forwarded to the FM system automatically on submission. The report archive in this app is primarily for quick reference and audit purposes.</div>
+        `
+      },
+    ]
+  },
+  god: {
+    label: 'God Mode',
+    color: '#C01820',
+    steps: [
+      {
+        title: 'God Mode overview',
+        sub: 'Full system control',
+        content: `
+          <p>God Mode accounts have full control over the entire system. Currently active God Mode accounts: <strong>ben.carey@rslqld.org</strong>.</p>
+          <p>In addition to everything Admins can do, God Mode can:</p>
+          <ul style="padding-left:18px;font-size:13px;color:var(--text);line-height:2.2;">
+            <li>Add, rename, or deactivate sites</li>
+            <li>Promote users to Admin or God Mode</li>
+            <li>Configure report email recipients globally</li>
+            <li>View the full audit log (all admin actions, timestamped)</li>
+            <li>Edit tutorial content (no code required)</li>
+            <li>Access the God Mode dashboard — portfolio overview of all 9 sites</li>
+          </ul>
+          <div class="callout warn"><strong>⚠ Note:</strong> Only God Mode accounts can promote another user to God Mode. Use this power carefully.</div>
+        `
+      },
+      {
+        title: 'God mode dashboard',
+        sub: 'Portfolio overview',
+        content: `
+          <p>The God Mode dashboard gives you a real-time overview of all 9 sites — last inspection date, fail count, inspector name, and status (on track / due / overdue).</p>
+          <p>Sites that haven't been inspected in over 6 weeks are automatically flagged in red. The dashboard also shows a <strong>Recurring Fails</strong> panel — items that have failed 3+ consecutive inspections across the whole portfolio.</p>
+          <div class="callout tip"><strong>💡 Tip:</strong> Use the dashboard at the start of each month to see which sites are due for inspection and assign inspectors accordingly.</div>
+        `
+      },
+      {
+        title: 'Adding a new site',
+        sub: 'Site management',
+        content: `
+          <p>Go to <strong>God Mode Dashboard → Sites</strong>. Click <strong>Add New Site</strong> and fill in:</p>
+          <ul style="padding-left:18px;font-size:13px;color:var(--text);line-height:2.2;">
+            <li>Site name and display label</li>
+            <li>Address (appears on report cover page)</li>
+            <li>Assign an Admin user</li>
+          </ul>
+          <p>Once the site is created, upload or photograph the floor plan. The system will generate placeholder area names (Office 01, Meeting Room A, etc.) which inspectors name on their first visit.</p>
+          <div class="callout note"><strong>✓ Note:</strong> New sites appear in the site switcher immediately. Inspectors won't see them until they're assigned to the site.</div>
+        `
+      },
+      {
+        title: 'Analytics and reporting',
+        sub: 'Insights dashboard',
+        content: `
+          <p>The Analytics dashboard (accessible from the nav bar) shows 7 metrics across all 9 sites:</p>
+          <ul style="padding-left:18px;font-size:13px;color:var(--text);line-height:2.2;">
+            <li>Fail rate over time (by site)</li>
+            <li>Cleaning vs Maintenance split</li>
+            <li>Most frequently failed items</li>
+            <li>Site comparison (fail rate)</li>
+            <li>Inspector activity</li>
+            <li>Time to inspect</li>
+            <li>Seasonal patterns</li>
+          </ul>
+          <p>All metrics are toggleable. Filter by site, date range, or category. Export as a branded PDF or email on a schedule.</p>
+        `
+      },
+    ]
+  }
+};
+
+let toastTimer;
+function showToast(msg){
+  const el=document.getElementById('toast');
+  el.textContent=msg;el.classList.add('show');
+  if(toastTimer)clearTimeout(toastTimer);
+  toastTimer=setTimeout(()=>el.classList.remove('show'),2800);
+}
+
+function setRole(role, btn){
+  currentRole=role;currentStep=0;completedSteps=new Set();
+  document.querySelectorAll('.role-btn').forEach(b=>b.classList.remove('active','inspector','admin','god'));
+  btn.classList.add('active',role);
+  render();
+}
+
+function render(){
+  const data=ROLES[currentRole];
+  const steps=data.steps;
+  // Sidebar
+  document.getElementById('sidebarItems').innerHTML=steps.map((s,i)=>`
+    <div class="sidebar-item ${i===currentStep?'active':''} ${completedSteps.has(i)?'done':''}" onclick="goTo(${i})">
+      <div class="step-num">${completedSteps.has(i)?'✓':i+1}</div>
+      ${s.title}
+    </div>`).join('');
+  document.getElementById('progressFill').style.width=(completedSteps.size/steps.length*100)+'%';
+  // Steps
+  document.getElementById('stepsContainer').innerHTML=steps.map((s,i)=>`
+    <div class="step-card ${i===currentStep?'':'hidden'}" id="step-${i}">
+      <div class="step-head">
+        <div class="step-num-lg ${completedSteps.has(i)?'done':''}">${completedSteps.has(i)?'✓':i+1}</div>
+        <div>
+          <div class="step-title">${s.title}</div>
+          <div class="step-sub">${s.sub}</div>
+        </div>
+      </div>
+      <div class="step-body">
+        ${s.content}
+        <div class="step-nav">
+          ${i>0?`<button class="nav-btn" onclick="goTo(${i-1})">← Previous</button>`:'<span></span>'}
+          <span class="step-counter">Step ${i+1} of ${steps.length}</span>
+          ${i<steps.length-1
+            ?`<button class="nav-btn primary" onclick="complete(${i})">Next →</button>`
+            :`<button class="nav-btn primary" onclick="complete(${i});showToast('Tutorial complete! Great work.')">✓ Finish Tutorial</button>`}
+        </div>
+      </div>
+    </div>`).join('');
+}
+
+function goTo(i){
+  currentStep=i;
+  render();
+  window.scrollTo({top:0,behavior:'smooth'});
+}
+
+function complete(i){
+  completedSteps.add(i);
+  const steps=ROLES[currentRole].steps;
+  if(i<steps.length-1){currentStep=i+1;}
+  render();
+  window.scrollTo({top:0,behavior:'smooth'});
+}
+
+// Demo interactivity
+function demoToggle(type,val){
+  const pf=document.getElementById(type+'PF');
+  if(!pf)return;
+  pf.querySelectorAll('.demo-pf-btn').forEach(b=>b.classList.remove('pass','fail'));
+  const btn=pf.querySelector(`.demo-pf-btn:${val==='pass'?'first':'last'}-child`);
+  if(btn)btn.classList.add(val);
+  const expand=document.getElementById('failExpand');
+  if(expand){
+    const cleanFail=document.getElementById('cleanPF')?.querySelector('.demo-pf-btn.fail');
+    const maintFail=document.getElementById('maintPF')?.querySelector('.demo-pf-btn.fail');
+    expand.style.display=(cleanFail||maintFail)?'block':'none';
+  }
+}
+
+render();
+</script>
+</body>
+</html>

@@ -1,0 +1,452 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RSLQLD Inspection Report — Anzac House — June 2026</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --rsl-black: #1A1A2E; --rsl-red: #C01820; --rsl-navy: #1A3A6B;
+  --rsl-gold: #E8A020; --rsl-pass: #1A7A3C;
+  --text: #111827; --text2: #6B7280; --text3: #9CA3AF;
+  --border: #E5E7EB; --bg: #F9FAFB;
+}
+body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif; background: #E5E7EB; color: var(--text); font-size: 13px; }
+
+/* Screen toolbar */
+.toolbar { background: var(--rsl-black); padding: 12px 24px; display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0; z-index: 100; border-bottom: 2px solid var(--rsl-red); }
+.toolbar-title { color: #fff; font-size: 13px; font-weight: 600; letter-spacing: 0.04em; }
+.toolbar-sub { color: rgba(255,255,255,0.45); font-size: 11px; margin-top: 2px; }
+.toolbar-actions { display: flex; gap: 10px; }
+.tool-btn { background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2); color: #fff; font-size: 12px; font-weight: 500; padding: 7px 16px; border-radius: 8px; cursor: pointer; transition: all 0.15s; display: flex; align-items: center; gap: 6px; }
+.tool-btn:hover { background: rgba(255,255,255,0.18); }
+.tool-btn.primary { background: var(--rsl-red); border-color: var(--rsl-red); }
+.tool-btn.primary:hover { opacity: 0.88; }
+
+/* Report wrapper */
+.report-wrap { max-width: 860px; margin: 28px auto; padding: 0 20px 60px; }
+
+/* Page */
+.page { background: #fff; border-radius: 4px; box-shadow: 0 2px 16px rgba(0,0,0,0.12); margin-bottom: 20px; overflow: hidden; }
+
+/* ── COVER PAGE ── */
+.cover { min-height: 420px; display: flex; flex-direction: column; }
+.cover-header { background: var(--rsl-black); padding: 32px 40px 28px; display: flex; align-items: flex-start; justify-content: space-between; border-bottom: 4px solid var(--rsl-red); }
+.cover-logo { height: 52px; }
+.cover-header-right { text-align: right; }
+.report-type { color: rgba(255,255,255,0.5); font-size: 10px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; }
+.report-period { color: #fff; font-size: 18px; font-weight: 800; letter-spacing: 0.02em; margin-top: 4px; }
+.cover-body { padding: 36px 40px; flex: 1; }
+.cover-site { font-size: 32px; font-weight: 900; color: var(--rsl-black); letter-spacing: -0.01em; line-height: 1.1; }
+.cover-site-sub { font-size: 14px; color: var(--text2); margin-top: 6px; font-weight: 400; }
+.cover-divider { width: 56px; height: 4px; background: var(--rsl-red); border-radius: 2px; margin: 20px 0; }
+.cover-meta-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-top: 8px; }
+.cover-meta-box { background: var(--bg); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; }
+.cover-meta-label { font-size: 10px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: var(--text3); margin-bottom: 5px; }
+.cover-meta-val { font-size: 15px; font-weight: 700; color: var(--text); }
+.cover-meta-val.pass { color: var(--rsl-pass); }
+.cover-meta-val.fail { color: var(--rsl-red); }
+.cover-footer { background: var(--bg); border-top: 1px solid var(--border); padding: 16px 40px; display: flex; align-items: center; justify-content: space-between; }
+.cover-footer-left { font-size: 11px; color: var(--text3); }
+.confidential { font-size: 10px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: var(--text3); display: flex; align-items: center; gap: 5px; }
+
+/* ── SECTION HEADER ── */
+.section-header { background: var(--rsl-black); padding: 14px 32px; display: flex; align-items: center; justify-content: space-between; }
+.section-title { color: #fff; font-size: 13px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
+.section-badge { font-size: 11px; font-weight: 600; padding: 3px 10px; border-radius: 10px; }
+.section-badge.red { background: var(--rsl-red); color: #fff; }
+.section-badge.green { background: var(--rsl-pass); color: #fff; }
+
+/* ── FAILS SUMMARY TABLE ── */
+.summary-table { width: 100%; border-collapse: collapse; }
+.summary-table th { background: var(--bg); padding: 10px 18px; text-align: left; font-size: 10px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text3); border-bottom: 1px solid var(--border); }
+.summary-table td { padding: 13px 18px; border-bottom: 1px solid var(--border); vertical-align: top; font-size: 12px; }
+.summary-table tr:last-child td { border-bottom: none; }
+.summary-table tr:hover td { background: #FAFAFA; }
+.floor-chip { display: inline-block; background: var(--rsl-black); color: #fff; font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 4px; letter-spacing: 0.05em; }
+.item-name-cell { font-weight: 500; color: var(--text); }
+.item-comment { color: var(--text2); font-size: 11px; margin-top: 3px; font-style: italic; }
+.type-tag { display: inline-flex; align-items: center; gap: 4px; font-size: 10px; font-weight: 600; padding: 2px 7px; border-radius: 6px; white-space: nowrap; }
+.type-tag.c { background: #FEF3C7; color: #92400E; }
+.type-tag.m { background: #FEE2E2; color: #991B1B; }
+.type-tags { display: flex; flex-direction: column; gap: 4px; }
+
+/* ── FLOOR DETAIL ── */
+.floor-section { border-bottom: 1px solid var(--border); }
+.floor-section:last-child { border-bottom: none; }
+.floor-head { background: #F3F4F6; padding: 10px 32px; display: flex; align-items: center; gap: 10px; border-bottom: 1px solid var(--border); }
+.floor-title { font-size: 12px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--rsl-navy); }
+.floor-status { font-size: 10px; font-weight: 600; padding: 2px 8px; border-radius: 8px; margin-left: auto; }
+.floor-status.pass { background: #DCFCE7; color: #166534; }
+.floor-status.fail { background: #FEE2E2; color: #991B1B; }
+.floor-status.partial { background: #FEF3C7; color: #92400E; }
+.detail-table { width: 100%; border-collapse: collapse; }
+.detail-table th { background: #FAFAFA; padding: 8px 32px; text-align: left; font-size: 10px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text3); border-bottom: 1px solid var(--border); }
+.detail-table td { padding: 11px 32px; border-bottom: 1px solid #F3F4F6; font-size: 12px; vertical-align: middle; }
+.detail-table tr:last-child td { border-bottom: none; }
+.result-pass { color: var(--rsl-pass); font-weight: 700; font-size: 11px; }
+.result-fail { color: var(--rsl-red); font-weight: 700; font-size: 11px; }
+.result-na { color: var(--text3); font-size: 11px; }
+
+/* Fail detail block inline */
+.inline-fail { background: #FFF8F8; border: 1px solid rgba(192,24,32,0.12); border-radius: 8px; padding: 10px 14px; margin-top: 6px; }
+.inline-fail-label { font-size: 10px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: var(--rsl-red); margin-bottom: 6px; }
+.inline-fail-comment { font-size: 12px; color: var(--text); font-style: italic; margin-bottom: 8px; line-height: 1.5; }
+.photo-row { display: flex; gap: 8px; }
+.photo-thumb { width: 80px; height: 60px; background: #F3F4F6; border-radius: 6px; border: 1px solid var(--border); display: flex; align-items: center; justify-content: center; font-size: 22px; color: var(--text3); }
+.photo-caption-text { font-size: 10px; color: var(--text2); margin-top: 3px; text-align: center; font-style: italic; }
+
+/* ── SIGN OFF BLOCK ── */
+.signoff-section { padding: 28px 40px; }
+.signoff-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 20px; }
+.signoff-field { }
+.signoff-field-label { font-size: 10px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: var(--text3); margin-bottom: 6px; }
+.signoff-field-val { font-size: 13px; font-weight: 600; color: var(--text); padding-bottom: 8px; border-bottom: 1.5px solid var(--rsl-black); }
+.signoff-confirm { background: #DCFCE7; border: 1px solid rgba(26,122,60,0.2); border-radius: 8px; padding: 12px 16px; font-size: 12px; color: #166534; line-height: 1.5; margin-top: 4px; }
+.report-footer { background: var(--rsl-black); padding: 14px 40px; display: flex; align-items: center; justify-content: space-between; }
+.report-footer-text { color: rgba(255,255,255,0.4); font-size: 10px; letter-spacing: 0.06em; }
+
+/* RECURRING CALLOUT */
+.recurring-callout{background:#FEF3C7;border:1.5px solid #D97706;border-radius:8px;padding:10px 14px;margin:8px 0;display:flex;align-items:flex-start;gap:10px;}
+.recurring-callout-icon{font-size:16px;flex-shrink:0;margin-top:1px;}
+.recurring-callout-text{font-size:12px;color:#92400E;line-height:1.5;}
+.recurring-callout-text strong{font-weight:700;display:block;margin-bottom:2px;}
+
+/* ZONE PHOTO IN REPORT */
+.zone-photo-section{padding:10px 32px;background:#F9FAFB;border-bottom:1px solid var(--border);display:flex;gap:10px;align-items:center;}
+.zone-photo-thumb{width:100px;height:75px;background:#E5E7EB;border-radius:6px;border:1px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:24px;color:#9CA3AF;}
+.zone-photo-cap{font-size:11px;color:var(--text2);font-style:italic;margin-top:4px;}
+
+/* UNCONFIRMED NAMES WARNING */
+.unconfirmed-warning{background:#FEF3C7;border:1.5px solid #D97706;border-radius:8px;padding:12px 16px;margin:16px 32px;display:flex;gap:10px;align-items:flex-start;}
+.unconfirmed-warning-icon{font-size:18px;flex-shrink:0;}
+.unconfirmed-warning-text{font-size:12px;color:#92400E;line-height:1.6;}
+.unconfirmed-warning-text strong{font-weight:700;}
+.unconfirmed-list{font-size:11px;color:#92400E;padding-left:16px;margin-top:4px;}
+</style>
+</head>
+<body>
+
+<!-- Screen toolbar (won't print) -->
+<div class="toolbar">
+  <div>
+    <div class="toolbar-title">Inspection Report Preview</div>
+    <div class="toolbar-sub">Anzac House · June 2026 · This is the exact format that will be generated and emailed</div>
+  </div>
+  <div class="toolbar-actions">
+    <button class="tool-btn" onclick="window.print()">🖨️ Print / Save PDF</button>
+    <button class="tool-btn primary" onclick="alert('In the live app this will email to assets@rslqld.org, ben.carey@rslqld.org and matt.sparnon@rslqld.org')">✉️ Email Report</button>
+  </div>
+</div>
+
+<div class="report-wrap">
+
+<!-- ── PAGE 1: COVER ── -->
+<div class="page">
+  <div class="cover">
+    <div class="cover-header">
+      <img class="cover-logo" src="data:image/png;base64,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" alt="RSL Queensland">
+      <div class="cover-header-right">
+        <div class="report-type">Monthly Inspection Report</div>
+        <div class="report-period">June 2026</div>
+      </div>
+    </div>
+    <div class="cover-body">
+      <div class="cover-site">Anzac House</div>
+      <div class="cover-site-sub">293 Queen Street, Brisbane CBD QLD 4000</div>
+      <div class="cover-divider"></div>
+      <div class="cover-meta-grid">
+        <div class="cover-meta-box">
+          <div class="cover-meta-label">Inspector</div>
+          <div class="cover-meta-val">Ben Carey</div>
+        </div>
+        <div class="cover-meta-box">
+          <div class="cover-meta-label">Submitted</div>
+          <div class="cover-meta-val">11 Jun 2026, 2:34pm</div>
+        </div>
+        <div class="cover-meta-box">
+          <div class="cover-meta-label">Total Items</div>
+          <div class="cover-meta-val">32</div>
+        </div>
+        <div class="cover-meta-box">
+          <div class="cover-meta-label">All Pass</div>
+          <div class="cover-meta-val pass">27</div>
+        </div>
+        <div class="cover-meta-box">
+          <div class="cover-meta-label">Fails</div>
+          <div class="cover-meta-val fail">5</div>
+        </div>
+        <div class="cover-meta-box">
+          <div class="cover-meta-label">Completion</div>
+          <div class="cover-meta-val">100%</div>
+        </div>
+      </div>
+    </div>
+    <div class="cover-footer">
+      <div class="cover-footer-left">RSL Queensland · Assets &amp; Facilities Team<br>Report generated automatically by RSLQLD Inspection App</div>
+      <div class="confidential">🔒 Confidential</div>
+    </div>
+  </div>
+</div>
+
+<!-- ── PAGE 2: FAILS SUMMARY ── -->
+<div class="page">
+  <div class="section-header">
+    <div class="section-title">⚠️ Fails Summary — Action Required</div>
+    <span class="section-badge red">5 items</span>
+  </div>
+  <table class="summary-table">
+    <thead>
+      <tr>
+        <th style="width:60px">Floor</th>
+        <th>Area / Item</th>
+        <th style="width:130px">Fail Type</th>
+        <th>Comment</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><span class="floor-chip">GF</span></td>
+        <td><div class="item-name-cell">Reception <span style="font-size:10px;background:#FEF3C7;color:#92400E;padding:1px 6px;border-radius:6px;font-weight:700;margin-left:4px;">🔁 Recurring</span></div></td>
+        <td><div class="type-tags"><span class="type-tag m">🔧 Maintenance</span></div></td>
+        <td><div class="item-comment">Paint peeling near skirting board — patch paint required</div></td>
+      </tr>
+      <tr>
+        <td><span class="floor-chip">GF</span></td>
+        <td><div class="item-name-cell">Toilets</div></td>
+        <td><div class="type-tags"><span class="type-tag c">🧹 Cleaning</span><span class="type-tag m">🔧 Maintenance</span></div></td>
+        <td><div class="item-comment">Deep clean required · Tap dripping — log with maintenance team</div></td>
+      </tr>
+      <tr>
+        <td><span class="floor-chip">GF</span></td>
+        <td><div class="item-name-cell">Kitchen</div></td>
+        <td><div class="type-tags"><span class="type-tag c">🧹 Cleaning</span></div></td>
+        <td><div class="item-comment">Splashback stained — steam clean required</div></td>
+      </tr>
+      <tr>
+        <td><span class="floor-chip">Roof</span></td>
+        <td><div class="item-name-cell">Roof Membrane <span style="font-size:10px;background:#FEF3C7;color:#92400E;padding:1px 6px;border-radius:6px;font-weight:700;margin-left:4px;">🔁 Recurring</span></div></td>
+        <td><div class="type-tags"><span class="type-tag m">🔧 Maintenance</span></div></td>
+        <td><div class="item-comment">Ponding water noted near north parapet — monitor / inspect after rain</div></td>
+      </tr>
+      <tr>
+        <td><span class="floor-chip">B2</span></td>
+        <td><div class="item-name-cell">Carpark Driveway</div></td>
+        <td><div class="type-tags"><span class="type-tag c">🧹 Cleaning</span></div></td>
+        <td><div class="item-comment">Oil stain noted near entry ramp</div></td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- ── PAGE 3: FLOOR-BY-FLOOR DETAIL ── -->
+<div class="page">
+  <div class="section-header">
+    <div class="section-title">📋 Full Inspection Detail</div>
+    <span class="section-badge green">Floor by Floor</span>
+  </div>
+
+  <!-- B2 -->
+  <div class="floor-section">
+    <div class="floor-head">
+      <div class="floor-title">B2 — Basement Level 2</div>
+      <span class="floor-status partial">1 Fail</span>
+    </div>
+    <table class="detail-table">
+      <thead><tr><th style="width:200px">Area</th><th style="width:100px">Cleaning</th><th style="width:100px">Maintenance</th><th>Notes</th></tr></thead>
+      <tbody>
+        <tr>
+          <td>Carpark Driveway</td>
+          <td><span class="result-fail">✗ Fail</span></td>
+          <td><span class="result-pass">✓ Pass</span></td>
+          <td>
+            <div class="inline-fail">
+              <div class="inline-fail-label">🧹 Cleaning Fail</div>
+              <div class="inline-fail-comment">Oil stain noted near entry ramp</div>
+              <div class="photo-row">
+                <div>
+                  <div class="photo-thumb">📷</div>
+                  <div class="photo-caption-text">Oil stain, entry ramp</div>
+                </div>
+              </div>
+            </div>
+          </td>
+        </tr>
+        <tr><td>Carpark Bays</td><td><span class="result-pass">✓ Pass</span></td><td><span class="result-pass">✓ Pass</span></td><td></td></tr>
+        <tr><td>Cleaners Store</td><td><span class="result-pass">✓ Pass</span></td><td><span class="result-pass">✓ Pass</span></td><td></td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- B1 -->
+  <div class="floor-section">
+    <div class="floor-head">
+      <div class="floor-title">B1 — Basement Level 1</div>
+      <span class="floor-status pass">All Pass</span>
+    </div>
+    <table class="detail-table">
+      <thead><tr><th style="width:200px">Area</th><th style="width:100px">Cleaning</th><th style="width:100px">Maintenance</th><th>Notes</th></tr></thead>
+      <tbody>
+        <tr><td>Carpark</td><td><span class="result-pass">✓ Pass</span></td><td><span class="result-pass">✓ Pass</span></td><td></td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- GF -->
+  <div class="floor-section">
+    <div class="floor-head">
+      <div class="floor-title">GF — Ground Floor</div>
+      <span class="floor-status fail">3 Fails</span>
+    </div>
+    <div class="zone-photo-section">
+      <div class="zone-photo-thumb">📷</div>
+      <div>
+        <div style="font-size:11px;font-weight:600;color:#6B7280;text-transform:uppercase;letter-spacing:0.07em;margin-bottom:2px;">Zone Reference Photo</div>
+        <div class="zone-photo-cap">Ground floor overview — taken from main entrance, facing north</div>
+      </div>
+    </div>
+    <table class="detail-table">
+      <thead><tr><th style="width:200px">Area</th><th style="width:100px">Cleaning</th><th style="width:100px">Maintenance</th><th>Notes</th></tr></thead>
+      <tbody>
+        <tr><td>Entrance / Foyer</td><td><span class="result-pass">✓ Pass</span></td><td><span class="result-pass">✓ Pass</span></td><td></td></tr>
+        <tr>
+          <td>Reception</td>
+          <td><span class="result-pass">✓ Pass</span></td>
+          <td><span class="result-fail">✗ Fail</span></td>
+          <td>
+            <div class="inline-fail">
+              <div class="inline-fail-label">🔧 Maintenance Fail</div>
+              <div class="recurring-callout">
+        <span class="recurring-callout-icon">🔁</span>
+        <div class="recurring-callout-text"><strong>Recurring Fail — 4 consecutive inspections</strong>This item has failed 4 months in a row. Immediate escalation recommended — log as priority maintenance request.</div>
+      </div>
+      <div class="inline-fail-comment">Paint peeling near skirting board — patch paint required</div>
+              <div class="photo-row">
+                <div><div class="photo-thumb">📷</div><div class="photo-caption-text">Skirting board damage</div></div>
+                <div><div class="photo-thumb">📷</div><div class="photo-caption-text">Detail — east wall</div></div>
+              </div>
+            </div>
+          </td>
+        </tr>
+        <tr><td>Lift</td><td><span class="result-pass">✓ Pass</span></td><td><span class="result-pass">✓ Pass</span></td><td></td></tr>
+        <tr><td>Offices (General)</td><td><span class="result-pass">✓ Pass</span></td><td><span class="result-pass">✓ Pass</span></td><td></td></tr>
+        <tr><td>Meeting Rooms</td><td><span class="result-pass">✓ Pass</span></td><td><span class="result-pass">✓ Pass</span></td><td></td></tr>
+        <tr>
+          <td>Toilets</td>
+          <td><span class="result-fail">✗ Fail</span></td>
+          <td><span class="result-fail">✗ Fail</span></td>
+          <td>
+            <div class="inline-fail" style="margin-bottom:6px">
+              <div class="inline-fail-label">🧹 Cleaning Fail</div>
+              <div class="inline-fail-comment">Deep clean required</div>
+              <div class="photo-row"><div><div class="photo-thumb">📷</div><div class="photo-caption-text">Cleaning required</div></div></div>
+            </div>
+            <div class="inline-fail">
+              <div class="inline-fail-label">🔧 Maintenance Fail</div>
+              <div class="inline-fail-comment">Tap dripping — log with maintenance team</div>
+              <div class="photo-row"><div><div class="photo-thumb">📷</div><div class="photo-caption-text">Tap — basin 2</div></div></div>
+            </div>
+          </td>
+        </tr>
+        <tr>
+          <td>Kitchen</td>
+          <td><span class="result-fail">✗ Fail</span></td>
+          <td><span class="result-pass">✓ Pass</span></td>
+          <td>
+            <div class="inline-fail">
+              <div class="inline-fail-label">🧹 Cleaning Fail</div>
+              <div class="inline-fail-comment">Splashback stained — steam clean required</div>
+              <div class="photo-row"><div><div class="photo-thumb">📷</div><div class="photo-caption-text">Steam clean required</div></div></div>
+            </div>
+          </td>
+        </tr>
+        <tr><td>Plant Room</td><td><span class="result-pass">✓ Pass</span></td><td><span class="result-pass">✓ Pass</span></td><td></td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Roof -->
+  <div class="floor-section">
+    <div class="floor-head">
+      <div class="floor-title">Roof</div>
+      <span class="floor-status fail">1 Fail</span>
+    </div>
+    <table class="detail-table">
+      <thead><tr><th style="width:200px">Area</th><th style="width:100px">Cleaning</th><th style="width:100px">Maintenance</th><th>Notes</th></tr></thead>
+      <tbody>
+        <tr>
+          <td>Roof Membrane</td>
+          <td><span class="result-pass">✓ Pass</span></td>
+          <td><span class="result-fail">✗ Fail</span></td>
+          <td>
+            <div class="inline-fail">
+              <div class="inline-fail-label">🔧 Maintenance Fail</div>
+              <div class="recurring-callout">
+        <span class="recurring-callout-icon">🔁</span>
+        <div class="recurring-callout-text"><strong>Recurring Fail — 4 consecutive inspections</strong>Ponding water has been logged 4 months consecutively. Structural assessment recommended before next wet season.</div>
+      </div>
+      <div class="inline-fail-comment">Ponding water noted near north parapet — monitor / inspect after rain</div>
+              <div class="photo-row">
+                <div><div class="photo-thumb">📷</div><div class="photo-caption-text">Overview — north parapet</div></div>
+                <div><div class="photo-thumb">📷</div><div class="photo-caption-text">Ponding water detail</div></div>
+              </div>
+            </div>
+          </td>
+        </tr>
+        <tr><td>Plant Equipment</td><td><span class="result-pass">✓ Pass</span></td><td><span class="result-pass">✓ Pass</span></td><td></td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- ── PAGE 4: SIGN OFF ── -->
+<div class="page">
+  <div class="unconfirmed-warning">
+      <span class="unconfirmed-warning-icon">⚠️</span>
+      <div class="unconfirmed-warning-text">
+        <strong>Unconfirmed Area Names — Action Required</strong>
+        The following areas were inspected using placeholder names. Please confirm the correct names on your next visit or contact your admin:
+        <ul class="unconfirmed-list">
+          <li>Ground Floor — "Office 03" (placeholder)</li>
+          <li>Level 1 — "Meeting Room A" (placeholder)</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="section-header">
+    <div class="section-title">✍️ Inspector Sign-Off</div>
+  </div>
+  <div class="signoff-section">
+    <div class="signoff-grid">
+      <div class="signoff-field">
+        <div class="signoff-field-label">Inspector Name</div>
+        <div class="signoff-field-val">Ben Carey</div>
+      </div>
+      <div class="signoff-field">
+        <div class="signoff-field-label">Title / Role</div>
+        <div class="signoff-field-val">Assets Manager</div>
+      </div>
+      <div class="signoff-field">
+        <div class="signoff-field-label">Site Inspected</div>
+        <div class="signoff-field-val">Anzac House</div>
+      </div>
+      <div class="signoff-field">
+        <div class="signoff-field-label">Date &amp; Time Submitted</div>
+        <div class="signoff-field-val">Wednesday 11 June 2026, 2:34pm</div>
+      </div>
+    </div>
+    <div class="signoff-confirm">
+      ✅ <strong>Ben Carey</strong> confirmed this inspection of <strong>Anzac House</strong> is complete and accurate to the best of their knowledge on <strong>11 June 2026 at 2:34pm</strong>.
+    </div>
+  </div>
+  <div class="report-footer">
+    <div class="report-footer-text">RSLQLD Inspection App · Anzac House · June 2026 · Page 4 of 4</div>
+    <div class="report-footer-text">Generated automatically on submission · Confidential</div>
+  </div>
+</div>
+
+</div><!-- end report-wrap -->
+
+</body>
+</html>

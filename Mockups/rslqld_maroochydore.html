@@ -1,0 +1,422 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RSLQLD — Maroochydore</title>
+<style>
+  :root {
+    --red:#C01820;--navy:#1A1A2E;--blue:#1A3A6B;--gold:#E8A020;
+    --bg:#F4F5F7;--border:#DDE1E7;--text:#1A1A2E;--muted:#6B7280;
+    --pass:#16A34A;--fail:#DC2626;--warn:#D97706;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;}
+
+  /* HEADER */
+  .header{background:var(--navy);color:white;padding:0 16px;display:flex;align-items:center;justify-content:space-between;height:60px;position:sticky;top:0;z-index:100;}
+  .hl{display:flex;align-items:center;gap:12px;}
+  /* LOGO */
+  .logo-wrap{display:flex;align-items:center;gap:0;}
+  .logo-red{background:var(--red);padding:6px 7px;border-radius:4px 0 0 4px;display:flex;flex-direction:column;align-items:center;justify-content:center;}
+  .logo-navy-stripe{background:#0a0a1a;width:4px;align-self:stretch;}
+  .logo-text-wrap{background:var(--red);padding:6px 8px 6px 4px;border-radius:0 4px 4px 0;display:flex;flex-direction:column;justify-content:center;}
+  .logo-rsl{font-size:13px;font-weight:900;color:white;letter-spacing:.08em;line-height:1;}
+  .logo-qld{font-size:8px;font-weight:700;color:rgba(255,255,255,.85);letter-spacing:.15em;line-height:1;margin-top:2px;}
+  .logo-star{font-size:11px;color:var(--gold);}
+  .hs{font-size:15px;font-weight:600;}
+  .hf{font-size:12px;color:rgba(255,255,255,.6);}
+  .pp{background:rgba(255,255,255,.12);border-radius:20px;padding:4px 12px;font-size:12px;color:white;font-weight:600;}
+  .pf{color:var(--gold);}
+
+  /* TOGGLE */
+  .vtog{display:flex;background:white;border-bottom:1px solid var(--border);position:sticky;top:60px;z-index:90;}
+  .vbtn{flex:1;padding:10px 4px;border:none;background:none;font-size:13px;font-weight:500;color:var(--muted);cursor:pointer;border-bottom:2px solid transparent;}
+  .vbtn.active{color:var(--blue);border-bottom-color:var(--blue);}
+  .ac{background:var(--red);color:white;border-radius:10px;font-size:10px;font-weight:700;padding:1px 6px;margin-left:4px;display:none;}
+  .ac.on{display:inline;}
+  .view{display:none;}.view.active{display:block;}
+
+  /* CHECKLIST */
+  .cv{padding:12px 16px;}
+  .zone-header{background:var(--blue);color:white;padding:10px 14px;border-radius:8px 8px 0 0;font-size:12px;font-weight:700;letter-spacing:.06em;display:flex;align-items:center;justify-content:space-between;margin-top:16px;}
+  .zone-header:first-child{margin-top:0;}
+  .zhs{font-size:11px;color:rgba(255,255,255,.7);}
+  .ab{border:1px solid var(--border);border-top:none;background:white;}
+  .ab:last-of-type{border-radius:0 0 8px 8px;margin-bottom:4px;}
+  .ah{padding:11px 14px;font-size:13px;font-weight:600;border-bottom:1px solid var(--bg);display:flex;align-items:center;justify-content:space-between;cursor:pointer;}
+  .ah:hover{background:var(--bg);}
+  .dot{width:10px;height:10px;border-radius:50%;background:var(--border);flex-shrink:0;}
+  .dot.pass{background:var(--pass);}.dot.fail{background:var(--fail);}.dot.inprog{background:var(--warn);}
+
+  /* PANEL */
+  .po{display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:200;}
+  .po.open{display:flex;align-items:flex-end;}
+  .pan{background:white;border-radius:18px 18px 0 0;width:100%;max-height:82vh;overflow-y:auto;animation:su .22s ease;}
+  @keyframes su{from{transform:translateY(100%)}to{transform:translateY(0)}}
+  .ph{display:flex;align-items:center;justify-content:space-between;padding:14px 16px 10px;border-bottom:1px solid var(--border);position:sticky;top:0;background:white;z-index:10;}
+  .pt{font-size:16px;font-weight:700;color:var(--navy);}
+  .pfl{font-size:12px;color:var(--muted);margin-top:2px;}
+  .pc{background:var(--bg);border:none;border-radius:50%;width:32px;height:32px;font-size:18px;cursor:pointer;color:var(--muted);display:flex;align-items:center;justify-content:center;}
+  .pi{padding:12px 16px 24px;}
+  .ir{border:1px solid var(--border);border-radius:10px;padding:12px;margin-bottom:10px;background:white;}
+  .in{font-size:14px;font-weight:600;margin-bottom:10px;color:var(--navy);}
+  .pr{display:flex;gap:8px;margin-bottom:6px;align-items:center;}
+  .pl{font-size:11px;color:var(--muted);width:100px;flex-shrink:0;}
+  .pb{display:flex;gap:6px;}
+  .pfb{padding:5px 14px;border-radius:6px;border:1.5px solid var(--border);font-size:12px;font-weight:600;cursor:pointer;background:white;transition:all .12s;}
+  .pfb.pa{background:#DCFCE7;border-color:var(--pass);color:var(--pass);}
+  .pfb.fa{background:#FEE2E2;border-color:var(--fail);color:var(--fail);}
+  .ci{width:100%;border:1px solid var(--border);border-radius:7px;padding:8px 10px;font-size:13px;resize:none;height:52px;font-family:inherit;color:var(--text);margin-top:8px;}
+  .ci:focus{outline:none;border-color:var(--blue);}
+  .sgs{display:flex;flex-wrap:wrap;gap:5px;margin-top:6px;}
+  .sg{background:#EEF2FF;color:var(--blue);border:none;border-radius:12px;padding:3px 10px;font-size:11px;cursor:pointer;font-family:inherit;}
+  .sg:hover{background:var(--blue);color:white;}
+  .phr{display:none;margin-top:8px;border:1.5px dashed var(--border);border-radius:8px;padding:10px;text-align:center;cursor:pointer;font-size:12px;color:var(--muted);}
+  .phr.on{display:block;}
+  .pp2{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px;}
+  .pt2{width:60px;height:60px;border-radius:6px;object-fit:cover;border:1px solid var(--border);}
+  .pfi{display:none;}
+  .acb{width:100%;background:var(--navy);color:white;border:none;border-radius:10px;padding:13px;font-size:14px;font-weight:700;cursor:pointer;margin-top:8px;}
+  .acb.done{background:var(--pass);}
+
+  /* ATTENTION */
+  .av{padding:12px 16px;}
+  .nf{text-align:center;padding:48px 24px;color:var(--muted);font-size:14px;}
+  .fc{background:white;border:1px solid var(--border);border-radius:10px;padding:12px 14px;margin-bottom:10px;border-left:4px solid var(--fail);cursor:pointer;}
+  .fa2{font-size:11px;color:var(--muted);margin-bottom:2px;}
+  .fi{font-size:14px;font-weight:600;margin-bottom:4px;}
+  .fts{display:flex;gap:6px;flex-wrap:wrap;}
+  .ft{font-size:10px;font-weight:700;border-radius:10px;padding:2px 8px;}
+  .ft.cl{background:#EDE9FE;color:#7C3AED;}
+  .ft.mn{background:#FEF3C7;color:#92400E;}
+</style>
+</head>
+<body>
+
+<!-- HEADER -->
+<div class="header">
+  <div class="hl">
+    <div class="logo-wrap">
+      <div class="logo-red">
+        <span class="logo-star">✦</span>
+      </div>
+      <div class="logo-navy-stripe"></div>
+      <div class="logo-text-wrap">
+        <span class="logo-rsl">RSL</span>
+        <span class="logo-qld">QUEENSLAND</span>
+      </div>
+    </div>
+    <div>
+      <div class="hs">Maroochydore</div>
+      <div class="hf">Sunshine Coast · Monthly Inspect</div>
+    </div>
+  </div>
+  <div class="pp"><span class="pf" id="ppct">0%</span> complete</div>
+</div>
+
+<!-- VIEW TOGGLE -->
+<div class="vtog">
+  <button class="vbtn active" onclick="switchView('checklist',this)">📋 Checklist</button>
+  <button class="vbtn" onclick="switchView('attention',this)">⚠️ Fails <span class="ac" id="attnc">0</span></button>
+</div>
+
+<!-- CHECKLIST VIEW -->
+<div class="view active" id="view-checklist">
+  <div class="cv" id="cv-content"></div>
+</div>
+
+<!-- ATTENTION VIEW -->
+<div class="view" id="view-attention">
+  <div class="av" id="av-content">
+    <div class="nf">✅ No fails recorded yet.<br>Start an inspection to track issues.</div>
+  </div>
+</div>
+
+<!-- SLIDE-UP PANEL -->
+<div class="po" id="po" onclick="closePO(event)">
+  <div class="pan">
+    <div class="ph">
+      <div>
+        <div class="pt" id="pt"></div>
+        <div class="pfl" id="pfl">Maroochydore</div>
+      </div>
+      <button class="pc" onclick="closePanel()">✕</button>
+    </div>
+    <div class="pi" id="pi"></div>
+  </div>
+</div>
+
+<script>
+// ── SITE DATA ──────────────────────────────────────────────────────────────
+const ZONES = [
+  {
+    zone: 'OPEN PLAN / REFUELLER AREA',
+    areas: [
+      { id:'open-plan', name:'Open Plan / Refueller Area', items:['Desks & Workstations','Floors / Carpet','Windows / Blinds','Bin Areas','General Tidiness','Refueller Signage'] }
+    ]
+  },
+  {
+    zone: 'LEFT WING — OFFICES & MEETING ROOMS',
+    areas: [
+      { id:'storage-room',     name:'Storage Room',           items:['Storage Organisation','Floor','General Condition'] },
+      { id:'it-comms',         name:'IT / Comms Room',        items:['Equipment Condition','Floor','Cable Management','General Tidiness'] },
+      { id:'district-merch',   name:'District Merchandise',   items:['Display / Stock Organisation','Floor / Carpet','General Tidiness'] },
+      { id:'meeting-room-2',   name:'Meeting Room 2',         items:['Tables & Chairs','AV Equipment','Floor / Carpet','Whiteboard / Walls'] },
+      { id:'meeting-room-3',   name:'Meeting Room 3',         items:['Tables & Chairs','AV Equipment','Floor / Carpet','Whiteboard / Walls'] },
+      { id:'meeting-room-4',   name:'Meeting Room 4 / Relief Staff', items:['Tables & Chairs','Floor / Carpet','General Condition'] }
+    ]
+  },
+  {
+    zone: 'CENTRE — STAFF & TRAINING',
+    areas: [
+      { id:'kitchen',       name:'Kitchen',        items:['Benchtops / Sink','Appliances (Fridge, Microwave, Dishwasher)','Cupboards','Floor','Bin / Waste'] },
+      { id:'staff-room',    name:'Staff Room',     items:['Tables & Chairs','Benchtop / Sink','Floor','Bin / Waste','General Tidiness'] },
+      { id:'training-room', name:'Training Room',  items:['Tables & Chairs','AV / Projector Equipment','Floor / Carpet','Whiteboard','General Presentation'] },
+      { id:'board-room',    name:'Board Room',     items:['Boardroom Table & Chairs','AV / Screen','Floor / Carpet','Whiteboard / Walls','General Presentation'] },
+      { id:'plant-room',    name:'Plant Room',     items:['General Condition','Floor','Equipment Access Clear'] },
+      { id:'lift',          name:'Lift',           items:['Interior Cleanliness','Floor / Carpet','Doors & Buttons','Ceiling / Lighting'] }
+    ]
+  },
+  {
+    zone: 'CENTRE-RIGHT — RECEPTION & WAITING',
+    areas: [
+      { id:'reception',     name:'Reception',          items:['Reception Desk','Waiting Area / Seating','Floor / Carpet','Signage','General Presentation'] },
+      { id:'waiting-area',  name:'Waiting Area',       items:['Seating Condition','Floor / Carpet','Magazines / Literature','General Tidiness'] },
+      { id:'canteen-lounge',name:'Canteen / Lounge',   items:['Tables & Chairs','Benchtop / Servery','Floor','Bin / Waste','General Tidiness'] },
+      { id:'meeting-room-1',name:'Meeting Room 1',     items:['Tables & Chairs','AV Equipment','Floor / Carpet','Whiteboard / Walls'] }
+    ]
+  },
+  {
+    zone: 'RIGHT WING — OFFICES',
+    areas: [
+      { id:'office-on-guard',  name:'On Guard / Nagato Office', items:['Desk & Chair','Floor / Carpet','General Tidiness'] },
+      { id:'office-1',         name:'Office 1',                 items:['Desk & Chair','Floor / Carpet','General Tidiness'] },
+      { id:'office-2',         name:'Office 2',                 items:['Desk & Chair','Floor / Carpet','General Tidiness'] },
+      { id:'office-3',         name:'Office 3',                 items:['Desk & Chair','Floor / Carpet','General Tidiness'] },
+      { id:'office-4',         name:'Office 4',                 items:['Desk & Chair','Floor / Carpet','General Tidiness'] }
+    ]
+  },
+  {
+    zone: 'AMENITIES',
+    areas: [
+      { id:'male-wc',       name:'Male Restrooms',      items:['Toilets / Urinals','Basins / Taps','Floors','Mirrors','Consumables (soap, paper)','General Hygiene'] },
+      { id:'female-wc',     name:'Female Restrooms',    items:['Toilets','Basins / Taps','Floors','Mirrors','Consumables (soap, paper)','General Hygiene'] },
+      { id:'access-wc-1',   name:'Accessible Restroom (Centre)', items:['Toilet','Basin / Taps','Floor','Handrails / Fittings','Consumables','Emergency cord / button'] },
+      { id:'access-wc-2',   name:'Accessible Restroom (Right)',  items:['Toilet','Basin / Taps','Floor','Handrails / Fittings','Consumables','Emergency cord / button'] }
+    ]
+  },
+  {
+    zone: 'COMMON AREAS & EXTERNAL',
+    areas: [
+      { id:'corridors',     name:'Corridors / Hallways', items:['Floor / Carpet','Walls','Lighting','General Tidiness'] },
+      { id:'external',      name:'External / Entry',     items:['Entry Approach','Signage','Garden / Surrounds','General Condition'] }
+    ]
+  }
+];
+
+// ── SUGGESTIONS ────────────────────────────────────────────────────────────
+const SUGG = {
+  default: { c:['Spot clean required','Deep clean required','General dust & wipe down','Floor mop required'], m:['Patch paint required','Light fitting replacement','Report to facilities','Monitor and review'] },
+  wc:      { c:['Consumables restocked','Grout staining','Odour issue noted','Limescale on fittings'], m:['Tap dripping','Flush mechanism fault','Tile cracked','Sealant required'] },
+  kitchen: { c:['Appliances require wipe down','Bin overflow','Benchtop staining','Fridge clean required'], m:['Appliance fault noted','Tap dripping','Cupboard door repair'] },
+  lift:    { c:['Interior wipe down required','Floor scuff marks'], m:['Button fault noted','Door sensor check required','Lighting replacement'] },
+  plant:   { c:['General sweep required'], m:['Equipment service due','Access obstruction noted','Label/signage check'] }
+};
+
+function getSugg(id) {
+  if (id.includes('wc')) return SUGG.wc;
+  if (id === 'kitchen' || id === 'staff-room') return SUGG.kitchen;
+  if (id === 'lift') return SUGG.lift;
+  if (id === 'plant-room') return SUGG.plant;
+  return SUGG.default;
+}
+
+// ── STATE ──────────────────────────────────────────────────────────────────
+const state = {};
+ZONES.forEach(z => z.areas.forEach(a => {
+  state[a.id] = { complete: false, items: {} };
+  a.items.forEach(i => { state[a.id].items[i] = { c: null, m: null, comment: '', photos: [] }; });
+}));
+
+// ── HELPERS ────────────────────────────────────────────────────────────────
+function getStatus(id) {
+  const its = Object.values(state[id].items);
+  const ans = its.filter(i => i.c !== null || i.m !== null);
+  if (!ans.length) return 'default';
+  if (its.some(i => i.c === false || i.m === false)) return 'fail';
+  if (ans.length === its.length) return 'pass';
+  return 'inprog';
+}
+
+function updProgress() {
+  let t = 0, a = 0;
+  ZONES.forEach(z => z.areas.forEach(ar => {
+    Object.values(state[ar.id].items).forEach(i => { t += 2; if (i.c !== null) a++; if (i.m !== null) a++; });
+  }));
+  document.getElementById('ppct').textContent = (t ? Math.round(a / t * 100) : 0) + '%';
+}
+
+function updAttn() {
+  let n = 0;
+  ZONES.forEach(z => z.areas.forEach(a => {
+    Object.values(state[a.id].items).forEach(i => { if (i.c === false || i.m === false) n++; });
+  }));
+  const el = document.getElementById('attnc');
+  el.textContent = n; el.classList.toggle('on', n > 0);
+}
+
+function updDot(id) {
+  const s = getStatus(id);
+  document.querySelectorAll(`.dot[data-id="${id}"]`).forEach(d => {
+    d.className = 'dot' + (s === 'default' ? '' : ' ' + s);
+  });
+}
+
+function switchView(n, btn) {
+  document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+  document.querySelectorAll('.vbtn').forEach(b => b.classList.remove('active'));
+  document.getElementById('view-' + n).classList.add('active');
+  btn.classList.add('active');
+  if (n === 'attention') renderAttn();
+}
+
+// ── PANEL ──────────────────────────────────────────────────────────────────
+let curId = null;
+
+function findArea(id) {
+  for (const z of ZONES) { const a = z.areas.find(a => a.id === id); if (a) return a; }
+  return null;
+}
+
+function openPanel(id) {
+  const area = findArea(id); if (!area) return;
+  curId = id;
+  document.getElementById('pt').textContent = area.name;
+  const s = getSugg(id);
+  const pi = document.getElementById('pi'); pi.innerHTML = '';
+
+  area.items.forEach(item => {
+    const key = item.replace(/[^a-z0-9]/gi, '_');
+    const ist = state[id].items[item];
+    const div = document.createElement('div'); div.className = 'ir';
+    div.innerHTML = `
+      <div class="in">${item}</div>
+      <div class="pr"><span class="pl">🧹 Cleaning</span>
+        <div class="pb">
+          <button class="pfb ${ist.c === true ? 'pa' : ''}" data-id="${id}" data-item="${item}" data-t="c" data-v="true">✔ Pass</button>
+          <button class="pfb ${ist.c === false ? 'fa' : ''}" data-id="${id}" data-item="${item}" data-t="c" data-v="false">✖ Fail</button>
+        </div></div>
+      <div class="pr"><span class="pl">🔧 Maintenance</span>
+        <div class="pb">
+          <button class="pfb ${ist.m === true ? 'pa' : ''}" data-id="${id}" data-item="${item}" data-t="m" data-v="true">✔ Pass</button>
+          <button class="pfb ${ist.m === false ? 'fa' : ''}" data-id="${id}" data-item="${item}" data-t="m" data-v="false">✖ Fail</button>
+        </div></div>
+      <textarea class="ci" placeholder="Add comment…" data-id="${id}" data-item="${item}">${ist.comment}</textarea>
+      <div class="sgs">${s.c.map(sg => `<button class="sg" data-id="${id}" data-item="${item}">${sg}</button>`).join('')}</div>
+      <div class="phr ${(ist.c === false || ist.m === false) ? 'on' : ''}" id="phr-${id}-${key}">
+        📷 Tap to add photo evidence
+        <div class="pp2" id="pp2-${id}-${key}"></div>
+      </div>
+      <input type="file" accept="image/*" class="pfi" id="pfi-${id}-${key}">
+    `;
+    pi.appendChild(div);
+    div.querySelector('.phr').addEventListener('click', () => div.querySelector('.pfi').click());
+    div.querySelector('.pfi').addEventListener('change', e => {
+      const f = e.target.files[0]; if (!f) return;
+      const r = new FileReader(); r.onload = ev => {
+        const img = document.createElement('img'); img.className = 'pt2'; img.src = ev.target.result;
+        document.getElementById('pp2-' + id + '-' + key).appendChild(img);
+        state[id].items[item].photos.push(ev.target.result);
+      }; r.readAsDataURL(f);
+    });
+  });
+
+  pi.addEventListener('click', e => {
+    const btn = e.target.closest('[data-t]');
+    if (btn) {
+      const { id: aid, item, t, v } = btn.dataset; const parsed = v === 'true';
+      state[aid].items[item][t] = parsed;
+      btn.closest('.pb').querySelectorAll('.pfb').forEach(b => b.classList.remove('pa', 'fa'));
+      btn.classList.add(parsed ? 'pa' : 'fa');
+      const ist = state[aid].items[item];
+      const k = item.replace(/[^a-z0-9]/gi, '_');
+      const pr = document.getElementById('phr-' + aid + '-' + k);
+      if (pr) pr.classList.toggle('on', ist.c === false || ist.m === false);
+    }
+    const sg = e.target.closest('.sg');
+    if (sg) {
+      const { id: aid, item } = sg.dataset;
+      const ta = sg.closest('.ir').querySelector('.ci');
+      ta.value = (ta.value ? ta.value + '; ' : '') + sg.textContent;
+      state[aid].items[item].comment = ta.value;
+    }
+  });
+
+  pi.addEventListener('change', e => {
+    const ta = e.target.closest('.ci');
+    if (ta) state[ta.dataset.id].items[ta.dataset.item].comment = ta.value;
+  });
+
+  const cb = document.createElement('button');
+  cb.className = 'acb' + (state[id].complete ? ' done' : '');
+  cb.textContent = state[id].complete ? '✔ Area Marked Complete' : 'Mark Area Complete';
+  cb.addEventListener('click', () => {
+    state[id].complete = true; cb.textContent = '✔ Area Marked Complete'; cb.classList.add('done');
+    updDot(id); updProgress(); setTimeout(closePanel, 400);
+  });
+  pi.appendChild(cb);
+  document.getElementById('po').classList.add('open');
+}
+
+function closePanel() {
+  document.getElementById('po').classList.remove('open');
+  if (curId) { updDot(curId); updProgress(); updAttn(); }
+}
+function closePO(e) { if (e.target === document.getElementById('po')) closePanel(); }
+
+// ── RENDER CHECKLIST ───────────────────────────────────────────────────────
+function renderCL() {
+  const c = document.getElementById('cv-content'); c.innerHTML = '';
+  ZONES.forEach(z => {
+    const zh = document.createElement('div'); zh.className = 'zone-header';
+    const count = z.areas.length;
+    zh.innerHTML = `${z.zone} <span class="zhs">${count} area${count > 1 ? 's' : ''}</span>`;
+    c.appendChild(zh);
+    z.areas.forEach(a => {
+      const s = getStatus(a.id);
+      const b = document.createElement('div'); b.className = 'ab';
+      b.innerHTML = `<div class="ah" onclick="openPanel('${a.id}')"><span>${a.name}</span><div class="dot ${s === 'default' ? '' : s}" data-id="${a.id}"></div></div>`;
+      c.appendChild(b);
+    });
+  });
+}
+
+// ── RENDER ATTENTION ───────────────────────────────────────────────────────
+function renderAttn() {
+  const c = document.getElementById('av-content'); c.innerHTML = '';
+  let n = 0;
+  ZONES.forEach(z => z.areas.forEach(a => {
+    Object.entries(state[a.id].items).forEach(([item, ist]) => {
+      if (ist.c !== false && ist.m !== false) return; n++;
+      const d = document.createElement('div'); d.className = 'fc';
+      d.innerHTML = `
+        <div class="fa2">${a.name} · Maroochydore</div>
+        <div class="fi">${item}</div>
+        <div class="fts">
+          ${ist.c === false ? '<span class="ft cl">🧹 Cleaning Fail</span>' : ''}
+          ${ist.m === false ? '<span class="ft mn">🔧 Maintenance Fail</span>' : ''}
+        </div>
+        ${ist.comment ? `<div style="font-size:12px;color:#6B7280;margin-top:6px;">${ist.comment}</div>` : ''}
+      `;
+      d.onclick = () => openPanel(a.id);
+      c.appendChild(d);
+    });
+  }));
+  if (!n) c.innerHTML = '<div class="nf">✅ No fails recorded yet.<br>Start an inspection to track issues.</div>';
+}
+
+renderCL();
+</script>
+</body>
+</html>
