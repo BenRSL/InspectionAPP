@@ -1,110 +1,63 @@
-'use client';
+import Link from 'next/link';
+import { allSites } from '@/lib/sites';
 
-import { Suspense, useState } from 'react';
-import { useSearchParams } from 'next/navigation';
-import { supabaseBrowser } from '@/lib/supabase-browser';
-
-export default function LoginPage() {
+export default function HomePage() {
   return (
-    <Suspense fallback={<LoginFallback />}>
-      <LoginForm />
-    </Suspense>
-  );
-}
-
-function LoginFallback() {
-  return (
-    <main className="flex-1 bg-white flex items-center justify-center px-6">
-      <div className="text-sm text-rsl-navy/40">Loading…</div>
-    </main>
-  );
-}
-
-function LoginForm() {
-  const searchParams = useSearchParams();
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
-
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    setError(null);
-    setLoading(true);
-
-    const supabase = supabaseBrowser();
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
-
-    setLoading(false);
-
-    if (error) {
-      setError('Incorrect email or password. Check with your admin if you need access.');
-      return;
-    }
-
-    const next = searchParams.get('next') || '/';
-    // Full page reload (not router.push) — guarantees the middleware sees the
-    // freshly-set session cookie on the very next request. A soft client-side
-    // navigation can fire before the cookie write is visible, bouncing back to /login.
-    window.location.href = next;
-  }
-
-  return (
-    <main className="flex-1 bg-white flex items-center justify-center px-6">
-      <div className="w-full max-w-sm">
-        <div className="text-center mb-8">
-          <div className="text-xs uppercase tracking-[0.2em] text-rsl-gold font-semibold mb-1">
-            RSL Queensland
-          </div>
-          <h1 className="font-display font-extrabold text-2xl text-rsl-navy">
-            Inspection App
-          </h1>
-        </div>
-
-        <form onSubmit={handleSubmit} className="space-y-4">
+    <main className="flex-1 bg-white">
+      <header className="bg-rsl-navy text-white px-6 py-8 sm:px-10">
+        <div className="max-w-5xl mx-auto flex items-center justify-between">
           <div>
-            <label className="block text-sm font-semibold text-rsl-navy mb-1.5">
-              Email
-            </label>
-            <input
-              type="email"
-              required
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className="w-full text-sm rounded-lg border border-rsl-navy/15 px-3 py-2.5 focus:border-rsl-red outline-none"
-              placeholder="you@rslqld.org"
-            />
+            {/* Logo placeholder — replace with RSLQLD PNG/SVG (Bible Open Item #3) */}
+            <div className="text-xs uppercase tracking-[0.2em] text-rsl-gold font-semibold mb-1">
+              RSL Queensland
+            </div>
+            <h1 className="font-display font-extrabold text-2xl sm:text-3xl">
+              Inspection App
+            </h1>
           </div>
-
-          <div>
-            <label className="block text-sm font-semibold text-rsl-navy mb-1.5">
-              Password
-            </label>
-            <input
-              type="password"
-              required
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className="w-full text-sm rounded-lg border border-rsl-navy/15 px-3 py-2.5 focus:border-rsl-red outline-none"
-              placeholder="••••••••"
-            />
-          </div>
-
-          {error && (
-            <p className="text-sm text-rsl-red bg-rsl-red/5 border border-rsl-red/20 rounded-lg px-3 py-2">
-              {error}
-            </p>
-          )}
-
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full text-sm font-semibold text-white bg-rsl-red rounded-lg px-4 py-2.5 hover:bg-rsl-red/90 transition-colors disabled:opacity-50"
+          <Link
+            href="/admin"
+            className="text-sm text-white/70 hover:text-white border border-white/20 rounded-full px-4 py-2 transition-colors"
           >
-            {loading ? 'Signing in…' : 'Sign in'}
-          </button>
-        </form>
-      </div>
+            Admin
+          </Link>
+        </div>
+      </header>
+
+      <section className="max-w-5xl mx-auto px-6 sm:px-10 py-10">
+        <h2 className="font-display font-bold text-lg text-rsl-navy mb-1">Select a site</h2>
+        <p className="text-sm text-rsl-navy/60 mb-6">
+          Choose a property to start a monthly inspection or open its State of Health checklist.
+        </p>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          {allSites.map((site) => (
+            <div
+              key={site.id}
+              className="group border border-rsl-navy/10 rounded-2xl p-5 hover:border-rsl-red/40 hover:shadow-sm transition-all"
+            >
+              <div className="font-display font-bold text-rsl-navy mb-3">{site.displayLabel}</div>
+              <div className="flex flex-col gap-2">
+                <Link
+                  href={`/sites/${site.id}`}
+                  className="text-sm font-semibold text-white bg-rsl-red rounded-lg px-4 py-2.5 text-center hover:bg-rsl-red/90 transition-colors"
+                >
+                  Monthly Inspect
+                </Link>
+                <Link
+                  href={`/sites/${site.id}/health`}
+                  className="text-sm font-medium text-rsl-blue border border-rsl-blue/30 rounded-lg px-4 py-2 text-center hover:bg-rsl-blue/5 transition-colors"
+                >
+                  State of Health
+                  <span className="ml-1.5 text-[10px] uppercase tracking-wide text-rsl-gold font-bold">
+                    Annual
+                  </span>
+                </Link>
+              </div>
+            </div>
+          ))}
+        </div>
+      </section>
     </main>
   );
 }
