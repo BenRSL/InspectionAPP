@@ -1,7 +1,7 @@
 'use client';
 
 import { Suspense, useState } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useSearchParams } from 'next/navigation';
 import { supabaseBrowser } from '@/lib/supabase-browser';
 
 export default function LoginPage() {
@@ -21,7 +21,6 @@ function LoginFallback() {
 }
 
 function LoginForm() {
-  const router = useRouter();
   const searchParams = useSearchParams();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -44,8 +43,10 @@ function LoginForm() {
     }
 
     const next = searchParams.get('next') || '/';
-    router.push(next);
-    router.refresh();
+    // Full page reload (not router.push) — guarantees the middleware sees the
+    // freshly-set session cookie on the very next request. A soft client-side
+    // navigation can fire before the cookie write is visible, bouncing back to /login.
+    window.location.href = next;
   }
 
   return (
