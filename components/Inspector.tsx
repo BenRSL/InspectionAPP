@@ -283,7 +283,6 @@ export default function Inspector({
           <span className="font-semibold text-rsl-navy">
             {completedItems} / {totalItems} items complete ({pct}%)
           </span>
-          <SaveIndicator status={saveStatus} />
           <div className="flex gap-1 bg-rsl-navy/5 rounded-full p-1">
             <button
               onClick={() => setView('floor')}
@@ -336,7 +335,10 @@ export default function Inspector({
       {/* Floor view */}
       {view === 'floor' && activeFloor && (
         <div className="mt-5 space-y-4">
-          <h2 className="font-display font-bold text-rsl-navy">{activeFloor.name}</h2>
+          <div className="flex items-center justify-between">
+            <h2 className="font-display font-bold text-rsl-navy">{activeFloor.name}</h2>
+            <SaveIndicator status={saveStatus} />
+          </div>
           {activeFloor.areas.map((a) => (
             <AreaCard
               key={a.id}
@@ -352,9 +354,12 @@ export default function Inspector({
       {/* Needs attention view */}
       {view === 'attention' && (
         <div className="mt-5 space-y-4">
-          <h2 className="font-display font-bold text-rsl-red">
-            Needs Attention — {failedAreas.length} area{failedAreas.length !== 1 && 's'}
-          </h2>
+          <div className="flex items-center justify-between">
+            <h2 className="font-display font-bold text-rsl-red">
+              Needs Attention — {failedAreas.length} area{failedAreas.length !== 1 && 's'}
+            </h2>
+            <SaveIndicator status={saveStatus} />
+          </div>
           {failedAreas.length === 0 && (
             <p className="text-sm text-rsl-navy/50 py-8 text-center">No fails logged yet.</p>
           )}
