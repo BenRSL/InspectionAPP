@@ -105,12 +105,17 @@ export const anzacHouse: Site = {
 // Full floor/area data to be entered via Admin portal onboarding workflow (Section 6.9)
 // or migrated from the HTML mockups already built (Phase 6). Placeholder shells below
 // so the site switcher is complete even before that data entry happens.
+//
+// NOTE: ids below must match the `slug` column in Supabase's sites table, since
+// app/sites/[siteId]/page.tsx looks sites up by slug. bundall-suite-1/2 corrected
+// here (this session) to match — they were previously bundall-1/bundall-2, which
+// didn't match the Supabase slugs and would have 404'd.
 export const siteShells: Omit<Site, 'floors'>[] = [
   { id: 'wickham-l14', name: '100 Wickham St', displayLabel: '(L14) 100 Wickham' },
   { id: 'stafford', name: 'Stafford', displayLabel: 'Stafford' },
   { id: 'strathpine', name: 'Strathpine', displayLabel: 'Strathpine' },
-  { id: 'bundall-1', name: 'Bundall Suite 1', displayLabel: 'Bundall (Suite 1)' },
-  { id: 'bundall-2', name: 'Bundall Suite 2', displayLabel: 'Bundall (Suite 2)' },
+  { id: 'bundall-suite-1', name: 'Bundall Suite 1', displayLabel: 'Bundall (Suite 1)' },
+  { id: 'bundall-suite-2', name: 'Bundall Suite 2', displayLabel: 'Bundall (Suite 2)' },
   { id: 'maroochydore', name: 'Maroochydore', displayLabel: 'Maroochydore' },
   { id: 'ipswich', name: 'Ipswich', displayLabel: 'Ipswich' },
   { id: 'toowoomba', name: 'Toowoomba', displayLabel: 'Toowoomba' },
