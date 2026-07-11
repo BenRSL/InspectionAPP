@@ -1,7 +1,16 @@
 import Link from 'next/link';
-import { allSites } from '@/lib/sites';
+import { supabaseServer } from '@/lib/supabase-server';
 
-export default function HomePage() {
+export const dynamic = 'force-dynamic';
+
+export default async function HomePage() {
+  const supabase = supabaseServer();
+
+  const { data: sites } = await supabase
+    .from('sites')
+    .select('id, name, slug')
+    .order('name');
+
   return (
     <main className="flex-1 bg-white">
       <header className="bg-rsl-navy text-white px-6 py-8 sm:px-10">
@@ -30,33 +39,39 @@ export default function HomePage() {
           Choose a property to start a monthly inspection or open its State of Health checklist.
         </p>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {allSites.map((site) => (
-            <div
-              key={site.id}
-              className="group border border-rsl-navy/10 rounded-2xl p-5 hover:border-rsl-red/40 hover:shadow-sm transition-all"
-            >
-              <div className="font-display font-bold text-rsl-navy mb-3">{site.displayLabel}</div>
-              <div className="flex flex-col gap-2">
-                <Link
-                  href={`/sites/${site.id}`}
-                  className="text-sm font-semibold text-white bg-rsl-red rounded-lg px-4 py-2.5 text-center hover:bg-rsl-red/90 transition-colors"
-                >
-                  Monthly Inspect
-                </Link>
-                <Link
-                  href={`/sites/${site.id}/health`}
-                  className="text-sm font-medium text-rsl-blue border border-rsl-blue/30 rounded-lg px-4 py-2 text-center hover:bg-rsl-blue/5 transition-colors"
-                >
-                  State of Health
-                  <span className="ml-1.5 text-[10px] uppercase tracking-wide text-rsl-gold font-bold">
-                    Annual
-                  </span>
-                </Link>
+        {sites && sites.length > 0 ? (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            {sites.map((site) => (
+              <div
+                key={site.id}
+                className="group border border-rsl-navy/10 rounded-2xl p-5 hover:border-rsl-red/40 hover:shadow-sm transition-all"
+              >
+                <div className="font-display font-bold text-rsl-navy mb-3">{site.name}</div>
+                <div className="flex flex-col gap-2">
+                  <Link
+                    href={`/sites/${site.slug}`}
+                    className="text-sm font-semibold text-white bg-rsl-red rounded-lg px-4 py-2.5 text-center hover:bg-rsl-red/90 transition-colors"
+                  >
+                    Monthly Inspect
+                  </Link>
+                  <Link
+                    href={`/sites/${site.slug}/health`}
+                    className="text-sm font-medium text-rsl-blue border border-rsl-blue/30 rounded-lg px-4 py-2 text-center hover:bg-rsl-blue/5 transition-colors"
+                  >
+                    State of Health
+                    <span className="ml-1.5 text-[10px] uppercase tracking-wide text-rsl-gold font-bold">
+                      Annual
+                    </span>
+                  </Link>
+                </div>
               </div>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        ) : (
+          <p className="text-sm text-rsl-navy/60">
+            No sites found. Add a site via the Admin portal.
+          </p>
+        )}
       </section>
     </main>
   );
