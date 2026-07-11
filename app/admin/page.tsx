@@ -2,13 +2,14 @@
 
 import Link from 'next/link';
 import { useState } from 'react';
-import { allSites, anzacHouse } from '@/lib/sites';
+import { allSites } from '@/lib/sites';
+import InsightsTab from '@/components/InsightsTab';
 
-type Tab = 'sites' | 'areas' | 'users' | 'tutorial';
+type Tab = 'sites' | 'areas' | 'users' | 'insights' | 'tutorial';
 
 // Mock — replace with Supabase query against `users` table once connected
 const mockUsers = [
-  { email: 'ben.carey@rslqld.org', role: 'god', sites: 'All sites' },
+  { email: 'ben.carey@rslqld.org', role: 'god_mode', sites: 'All sites' },
   { email: 'assets@rslqld.org', role: 'admin', sites: 'All sites' },
   { email: 'matt.sparnon@rslqld.org', role: 'admin', sites: 'All sites' },
 ];
@@ -40,6 +41,7 @@ export default function AdminPage() {
             ['sites', 'Sites'],
             ['areas', 'Areas & Checklist Items'],
             ['users', 'Users'],
+            ['insights', 'Insights'],
             ['tutorial', 'Tutorial'],
           ] as [Tab, string][]).map(([id, label]) => (
             <button
@@ -62,6 +64,7 @@ export default function AdminPage() {
             <AreasTab expandedSite={expandedSite} setExpandedSite={setExpandedSite} />
           )}
           {tab === 'users' && <UsersTab />}
+          {tab === 'insights' && <InsightsTab />}
           {tab === 'tutorial' && <TutorialTab />}
         </div>
       </div>
@@ -231,10 +234,10 @@ function UsersTab() {
                 <td className="px-4 py-3">
                   <span
                     className={`text-xs font-semibold px-2.5 py-1 rounded-full ${
-                      u.role === 'god' ? 'bg-rsl-gold/20 text-rsl-gold' : 'bg-rsl-blue/10 text-rsl-blue'
+                      u.role === 'god_mode' ? 'bg-rsl-gold/20 text-rsl-gold' : 'bg-rsl-blue/10 text-rsl-blue'
                     }`}
                   >
-                    {u.role === 'god' ? 'God Mode' : 'Admin'}
+                    {u.role === 'god_mode' ? 'God Mode' : 'Admin'}
                   </span>
                 </td>
                 <td className="px-4 py-3 text-rsl-navy/60">{u.sites}</td>
