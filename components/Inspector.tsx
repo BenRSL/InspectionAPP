@@ -247,6 +247,48 @@ export default function Inspector({
     return 'not-started';
   }
 
+  // Completion is tracked separately from floorStatus's color-coding — a floor with
+  // fails can still be "complete" (every item assessed one way or the other), and
+  // that's what Next Floor navigation and the per-floor % badge care about.
+  function isFloorComplete(floorId: string): boolean {
+    const floor = site.floors.find((f) => f.id === floorId);
+    if (!floor) return false;
+    const items = floor.areas.flatMap((a) => a.items.map((it) => areaState[a.id]?.items[it.id]));
+    if (items.length === 0) return false;
+    return items.every((it) => it?.cleaningPass !== null && it?.maintenancePass !== null);
+  }
+
+  function floorPct(floorId: string): number {
+    const floor = site.floors.find((f) => f.id === floorId);
+    if (!floor) return 0;
+    const items = floor.areas.flatMap((a) => a.items.map((it) => areaState[a.id]?.items[it.id]));
+    if (items.length === 0) return 0;
+    const done = items.filter((it) => it?.cleaningPass !== null && it?.maintenancePass !== null).length;
+    return Math.round((done / items.length) * 100);
+  }
+
+  // Next incomplete floor after the current one, wrapping around to the start —
+  // skips floors that are already fully assessed so the inspector always lands
+  // somewhere there's still work to do.
+  function nextIncompleteFloorId(): string | null {
+    const floors = site.floors;
+    const currentIndex = floors.findIndex((f) => f.id === activeFloorId);
+    for (let i = currentIndex + 1; i < floors.length; i++) {
+      if (!isFloorComplete(floors[i].id)) return floors[i].id;
+    }
+    for (let i = 0; i < currentIndex; i++) {
+      if (!isFloorComplete(floors[i].id)) return floors[i].id;
+    }
+    return null;
+  }
+
+  function goToNextFloor() {
+    const nextId = nextIncompleteFloorId();
+    if (!nextId) return;
+    setActiveFloorId(nextId);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
   const activeFloor = site.floors.find((f) => f.id === activeFloorId);
 
   const failedAreas = site.floors
@@ -310,6 +352,7 @@ export default function Inspector({
           <div className="flex gap-1.5 overflow-x-auto mt-3 pb-1 -mx-1 px-1">
             {site.floors.map((f) => {
               const status = floorStatus(f.id);
+              const pct = floorPct(f.id);
               return (
                 <button
                   key={f.id}
@@ -325,6 +368,11 @@ export default function Inspector({
                   }`}
                 >
                   {f.name}
+                  <span
+                    className={`ml-1.5 ${activeFloorId === f.id ? 'text-white/60' : 'opacity-60'}`}
+                  >
+                    {pct}%
+                  </span>
                 </button>
               );
             })}
@@ -348,6 +396,12 @@ export default function Inspector({
               onSetItem={(itemId, category, patch) => setItem(a.id, itemId, category, patch)}
             />
           ))}
+
+          <NextFloorPrompt
+            nextFloorName={site.floors.find((f) => f.id === nextIncompleteFloorId())?.name ?? null}
+            allComplete={pct === 100}
+            onNext={goToNextFloor}
+          />
         </div>
       )}
 
@@ -379,6 +433,39 @@ export default function Inspector({
         </div>
       )}
     </div>
+  );
+}
+
+function NextFloorPrompt({
+  nextFloorName,
+  allComplete,
+  onNext,
+}: {
+  nextFloorName: string | null;
+  allComplete: boolean;
+  onNext: () => void;
+}) {
+  if (allComplete) {
+    return (
+      <div className="rounded-2xl border border-pass/30 bg-pass/5 p-4 text-center">
+        <p className="text-sm font-semibold text-pass">
+          All floors complete — inspection ready to submit.
+        </p>
+      </div>
+    );
+  }
+
+  if (!nextFloorName) {
+    return null; // nothing incomplete elsewhere — stay put and finish this floor
+  }
+
+  return (
+    <button
+      onClick={onNext}
+      className="w-full text-sm font-semibold text-white bg-rsl-navy rounded-xl py-3.5 hover:bg-rsl-navy/90 transition-colors"
+    >
+      Next Floor: {nextFloorName} →
+    </button>
   );
 }
 
