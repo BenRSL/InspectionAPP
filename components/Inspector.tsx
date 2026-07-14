@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { supabaseBrowser } from '@/lib/supabase-browser';
-import type { Site, ItemCategory } from '@/lib/sites';
+import type { Site, Floor, FloorArea, ItemCategory } from '@/lib/sites';
 
 type PassState = boolean | null; // null = not yet assessed
 type SaveStatus = 'idle' | 'saving' | 'saved' | 'error';
@@ -43,6 +43,33 @@ export default function Inspector({
 
   const [activeFloorId, setActiveFloorId] = useState(site.floors[0]?.id ?? '');
   const [view, setView] = useState<'floor' | 'attention' | 'summary'>('floor');
+
+  // Local mutable copy of the site's floor/area structure — cloned once from the
+  // `site` prop. Renaming, adding, deleting, and reordering areas all operate on
+  // this state and write through to Supabase, rather than mutating the prop.
+  const [floors, setFloors] = useState<Floor[]>(() => structuredClone(site.floors));
+
+  // Zones and item labels are only editable during a site's first 3 monthly
+  // inspections — matches monthly_onboarding_inspections_remaining, which the
+  // completion effect below decrements. Once it hits 0, editing locks to Admin-only.
+  const canEditStructure = monthlyOnboardingRemaining > 0;
+
+  const [structureError, setStructureError] = useState<string | null>(null);
+  const [structureBusy, setStructureBusy] = useState(false);
+
+  const [editingAreaId, setEditingAreaId] = useState<string | null>(null);
+  const [editingAreaName, setEditingAreaName] = useState('');
+
+  const [editingItemId, setEditingItemId] = useState<string | null>(null);
+  const [editingItemName, setEditingItemName] = useState('');
+
+  const [addingAreaToFloor, setAddingAreaToFloor] = useState<string | null>(null);
+  const [newAreaName, setNewAreaName] = useState('');
+
+  const [draggingAreaId, setDraggingAreaId] = useState<string | null>(null);
+  const dragFloorId = useRef<string | null>(null);
+  const areaCardRefs = useRef<Record<string, HTMLDivElement | null>>({});
+
   const [areaState, setAreaState] = useState<Record<string, AreaState>>(() => {
     const init: Record<string, AreaState> = {};
     site.floors.forEach((f) =>
@@ -147,7 +174,7 @@ export default function Inspector({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [siteDbId]);
 
-  const totalItems = site.floors.flatMap((f) => f.areas).flatMap((a) => a.items).length;
+  const totalItems = floors.flatMap((f) => f.areas).flatMap((a) => a.items).length;
   const completedItems = Object.values(areaState)
     .flatMap((a) => Object.values(a.items))
     .filter((it) => it.cleaningPass !== null || it.maintenancePass !== null).length;
@@ -237,7 +264,7 @@ export default function Inspector({
   }, [pct, loading, supabase, siteDbId, monthlyOnboardingRemaining]);
 
   function floorStatus(floorId: string): 'not-started' | 'has-fails' | 'done' {
-    const floor = site.floors.find((f) => f.id === floorId);
+    const floor = floors.find((f) => f.id === floorId);
     if (!floor) return 'not-started';
     const items = floor.areas.flatMap((a) => a.items.map((it) => areaState[a.id]?.items[it.id]));
     const anyFail = items.some((it) => it?.cleaningPass === false || it?.maintenancePass === false);
@@ -252,7 +279,7 @@ export default function Inspector({
   // fails can still be "complete" (every item assessed one way or the other), and
   // that's what Next Floor navigation and the per-floor % badge care about.
   function isFloorComplete(floorId: string): boolean {
-    const floor = site.floors.find((f) => f.id === floorId);
+    const floor = floors.find((f) => f.id === floorId);
     if (!floor) return false;
     const items = floor.areas.flatMap((a) => a.items.map((it) => areaState[a.id]?.items[it.id]));
     if (items.length === 0) return false;
@@ -260,7 +287,7 @@ export default function Inspector({
   }
 
   function floorPct(floorId: string): number {
-    const floor = site.floors.find((f) => f.id === floorId);
+    const floor = floors.find((f) => f.id === floorId);
     if (!floor) return 0;
     const items = floor.areas.flatMap((a) => a.items.map((it) => areaState[a.id]?.items[it.id]));
     if (items.length === 0) return 0;
@@ -272,7 +299,6 @@ export default function Inspector({
   // skips floors that are already fully assessed so the inspector always lands
   // somewhere there's still work to do.
   function nextIncompleteFloorId(): string | null {
-    const floors = site.floors;
     const currentIndex = floors.findIndex((f) => f.id === activeFloorId);
     for (let i = currentIndex + 1; i < floors.length; i++) {
       if (!isFloorComplete(floors[i].id)) return floors[i].id;
@@ -290,9 +316,222 @@ export default function Inspector({
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
-  const activeFloor = site.floors.find((f) => f.id === activeFloorId);
+  // ---- Structure editing: rename/add/delete areas, rename items, drag reorder.
+  // All gated by canEditStructure (locks after the site's first 3 inspections). ----
 
-  const failedAreas = site.floors
+  function startEditArea(area: FloorArea) {
+    if (!canEditStructure) return;
+    setEditingAreaId(area.id);
+    setEditingAreaName(area.name);
+  }
+
+  async function saveAreaName(floorId: string, areaId: string) {
+    const trimmed = editingAreaName.trim();
+    setEditingAreaId(null);
+    if (!trimmed) return;
+
+    setFloors((prev) =>
+      prev.map((f) =>
+        f.id === floorId
+          ? { ...f, areas: f.areas.map((a) => (a.id === areaId ? { ...a, name: trimmed } : a)) }
+          : f
+      )
+    );
+
+    const { error } = await supabase.from('floor_areas').update({ area_name: trimmed }).eq('id', areaId);
+    if (error) setStructureError(`Couldn't rename that zone: ${error.message}`);
+  }
+
+  function startEditItem(item: { id: string; name: string }) {
+    if (!canEditStructure) return;
+    setEditingItemId(item.id);
+    setEditingItemName(item.name);
+  }
+
+  async function saveItemName(areaId: string, itemId: string) {
+    const trimmed = editingItemName.trim();
+    setEditingItemId(null);
+    if (!trimmed) return;
+
+    setFloors((prev) =>
+      prev.map((f) => ({
+        ...f,
+        areas: f.areas.map((a) =>
+          a.id === areaId
+            ? { ...a, items: a.items.map((it) => (it.id === itemId ? { ...it, name: trimmed } : it)) }
+            : a
+        ),
+      }))
+    );
+
+    const { error } = await supabase.from('checklist_items').update({ item_name: trimmed }).eq('id', itemId);
+    if (error) setStructureError(`Couldn't rename that item: ${error.message}`);
+  }
+
+  async function addAreaToFloor(floorId: string) {
+    const trimmed = newAreaName.trim();
+    if (!trimmed) return;
+    const floor = floors.find((f) => f.id === floorId);
+    if (!floor) return;
+
+    setStructureBusy(true);
+    setStructureError(null);
+
+    // Insert the area first so we get a real id back from Supabase.
+    const { data: areaRow, error: areaErr } = await supabase
+      .from('floor_areas')
+      .insert({
+        site_id: siteDbId,
+        floor_name: floor.name,
+        area_name: trimmed,
+        sort_order: 999999, // temporary — persistOrder() below renumbers everything sequentially
+      })
+      .select('id')
+      .single();
+
+    if (areaErr || !areaRow) {
+      setStructureBusy(false);
+      setStructureError(`Couldn't add "${trimmed}": ${areaErr?.message ?? 'unknown error'}`);
+      return;
+    }
+
+    // Match the standard two-item shape (Cleaning + Maintenance) every other area has.
+    const { data: itemRows, error: itemErr } = await supabase
+      .from('checklist_items')
+      .insert([
+        { area_id: areaRow.id, item_name: 'General condition', category: 'cleaning' },
+        { area_id: areaRow.id, item_name: 'General condition', category: 'maintenance' },
+      ])
+      .select('id, item_name, category');
+
+    if (itemErr || !itemRows) {
+      setStructureBusy(false);
+      setStructureError(`Zone added, but couldn't set up its checklist items: ${itemErr?.message}`);
+      return;
+    }
+
+    const newArea: FloorArea = {
+      id: areaRow.id,
+      name: trimmed,
+      items: itemRows.map((it) => ({
+        id: it.id,
+        name: it.item_name,
+        category: it.category as ItemCategory,
+      })),
+    };
+
+    setFloors((prev) =>
+      prev.map((f) => (f.id === floorId ? { ...f, areas: [...f.areas, newArea] } : f))
+    );
+    setAreaState((prev) => {
+      const items: Record<string, ItemState> = {};
+      newArea.items.forEach((it) => (items[it.id] = emptyItemState()));
+      return { ...prev, [newArea.id]: { items } };
+    });
+
+    setAddingAreaToFloor(null);
+    setNewAreaName('');
+    await persistOrder([...floors.filter((f) => f.id !== floorId), { ...floor, areas: [...floor.areas, newArea] }]);
+    setStructureBusy(false);
+  }
+
+  async function deleteAreaHandler(floorId: string, area: FloorArea) {
+    if (
+      !window.confirm(
+        `Remove "${area.name}"? This deletes its checklist items and any saved answers for this inspection. This can't be undone.`
+      )
+    )
+      return;
+
+    setStructureBusy(true);
+    setStructureError(null);
+
+    const { error } = await supabase.from('floor_areas').delete().eq('id', area.id);
+    if (error) {
+      setStructureBusy(false);
+      setStructureError(`Couldn't remove "${area.name}": ${error.message}`);
+      return;
+    }
+
+    setFloors((prev) =>
+      prev.map((f) => (f.id === floorId ? { ...f, areas: f.areas.filter((a) => a.id !== area.id) } : f))
+    );
+    setStructureBusy(false);
+  }
+
+  // Renumbers every area across the whole site sequentially (0, 1, 2, …) in the
+  // order the given floors/areas structure implies, and writes it to Supabase.
+  // Using a full renumber — rather than gap-based insertion — avoids any risk of
+  // a new or reordered area's sort_order value colliding with a neighbouring
+  // floor's, which would scramble floor grouping on the site detail page.
+  async function persistOrder(orderedFloors: Floor[]) {
+    const orderedIds = orderedFloors.flatMap((f) => f.areas.map((a) => a.id));
+    setSaveStatus('saving');
+    const results = await Promise.all(
+      orderedIds.map((id, index) => supabase.from('floor_areas').update({ sort_order: index }).eq('id', id))
+    );
+    setSaveStatus(results.some((r) => r.error) ? 'error' : 'saved');
+  }
+
+  function startDragArea(floorId: string, areaId: string) {
+    if (!canEditStructure) return;
+    dragFloorId.current = floorId;
+    setDraggingAreaId(areaId);
+  }
+
+  useEffect(() => {
+    if (!draggingAreaId || !dragFloorId.current) return;
+    const floorId = dragFloorId.current;
+
+    function onPointerMove(e: PointerEvent) {
+      setFloors((prev) => {
+        const floor = prev.find((f) => f.id === floorId);
+        if (!floor) return prev;
+        const draggedIndex = floor.areas.findIndex((a) => a.id === draggingAreaId);
+        if (draggedIndex === -1) return prev;
+
+        let overIndex = floor.areas.length - 1;
+        for (let i = 0; i < floor.areas.length; i++) {
+          const el = areaCardRefs.current[floor.areas[i].id];
+          if (!el) continue;
+          const rect = el.getBoundingClientRect();
+          const mid = rect.top + rect.height / 2;
+          if (e.clientY < mid) {
+            overIndex = i;
+            break;
+          }
+        }
+
+        if (overIndex === draggedIndex) return prev;
+
+        const nextAreas = [...floor.areas];
+        const [moved] = nextAreas.splice(draggedIndex, 1);
+        nextAreas.splice(overIndex, 0, moved);
+        return prev.map((f) => (f.id === floorId ? { ...f, areas: nextAreas } : f));
+      });
+    }
+
+    function onPointerUp() {
+      setDraggingAreaId(null);
+      dragFloorId.current = null;
+      setFloors((current) => {
+        persistOrder(current);
+        return current;
+      });
+    }
+
+    window.addEventListener('pointermove', onPointerMove);
+    window.addEventListener('pointerup', onPointerUp);
+    return () => {
+      window.removeEventListener('pointermove', onPointerMove);
+      window.removeEventListener('pointerup', onPointerUp);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draggingAreaId]);
+
+  const activeFloor = floors.find((f) => f.id === activeFloorId);
+
+  const failedAreas = floors
     .flatMap((f) => f.areas.map((a) => ({ floor: f, area: a })))
     .filter(({ area }) =>
       area.items.some(
@@ -303,7 +542,7 @@ export default function Inspector({
     );
 
   // Per-floor pass/fail tallies for the Summary screen
-  const floorStats = site.floors.map((f) => {
+  const floorStats = floors.map((f) => {
     const items = f.areas.flatMap((a) => a.items.map((it) => ({ areaId: a.id, itemId: it.id })));
     let pass = 0;
     let fail = 0;
@@ -377,7 +616,7 @@ export default function Inspector({
 
         {view === 'floor' && (
           <div className="flex gap-1.5 overflow-x-auto mt-3 pb-1 -mx-1 px-1">
-            {site.floors.map((f) => {
+            {floors.map((f) => {
               const status = floorStatus(f.id);
               const floorPercent = floorPct(f.id);
               return (
@@ -411,21 +650,98 @@ export default function Inspector({
       {view === 'floor' && activeFloor && (
         <div className="mt-5 space-y-4">
           <div className="flex items-center justify-between">
-            <h2 className="font-display font-bold text-rsl-navy">{activeFloor.name}</h2>
+            <div className="flex items-center gap-2">
+              <h2 className="font-display font-bold text-rsl-navy">{activeFloor.name}</h2>
+              {canEditStructure && (
+                <span className="text-[10px] font-semibold uppercase tracking-wide text-rsl-gold bg-rsl-gold/10 rounded-full px-2 py-0.5">
+                  Editable · first 3 inspections
+                </span>
+              )}
+            </div>
             <SaveIndicator status={saveStatus} />
           </div>
+
+          {structureError && (
+            <div className="rounded-xl bg-rsl-red/5 border border-rsl-red/20 p-3 text-sm text-rsl-red flex items-start justify-between gap-3">
+              <span>{structureError}</span>
+              <button onClick={() => setStructureError(null)} className="text-rsl-red/60 shrink-0">
+                ✕
+              </button>
+            </div>
+          )}
+
           {activeFloor.areas.map((a) => (
-            <AreaCard
+            <div
               key={a.id}
-              areaName={a.name}
-              items={a.items}
-              state={areaState[a.id]}
-              onSetItem={(itemId, category, patch) => setItem(a.id, itemId, category, patch)}
-            />
+              ref={(el) => {
+                areaCardRefs.current[a.id] = el;
+              }}
+            >
+              <AreaCard
+                areaId={a.id}
+                areaName={a.name}
+                items={a.items}
+                state={areaState[a.id]}
+                onSetItem={(itemId, category, patch) => setItem(a.id, itemId, category, patch)}
+                editable={canEditStructure}
+                isEditingName={editingAreaId === a.id}
+                editingName={editingAreaName}
+                onStartEditName={() => startEditArea(a)}
+                onEditNameChange={setEditingAreaName}
+                onSaveName={() => saveAreaName(activeFloor.id, a.id)}
+                onCancelEditName={() => setEditingAreaId(null)}
+                onDelete={() => deleteAreaHandler(activeFloor.id, a)}
+                editingItemId={editingItemId}
+                editingItemName={editingItemName}
+                onStartEditItem={startEditItem}
+                onEditItemNameChange={setEditingItemName}
+                onSaveItemName={(itemId) => saveItemName(a.id, itemId)}
+                onCancelEditItem={() => setEditingItemId(null)}
+                isDragging={draggingAreaId === a.id}
+                onDragHandlePointerDown={() => startDragArea(activeFloor.id, a.id)}
+                busy={structureBusy}
+              />
+            </div>
           ))}
 
+          {canEditStructure &&
+            (addingAreaToFloor === activeFloor.id ? (
+              <div className="flex gap-2">
+                <input
+                  autoFocus
+                  value={newAreaName}
+                  onChange={(e) => setNewAreaName(e.target.value)}
+                  placeholder="New zone name"
+                  className="flex-1 text-sm rounded-lg border border-rsl-navy/15 px-3 py-2"
+                />
+                <button
+                  onClick={() => addAreaToFloor(activeFloor.id)}
+                  disabled={structureBusy || !newAreaName.trim()}
+                  className="text-sm font-semibold text-white bg-rsl-navy rounded-lg px-4 disabled:opacity-40"
+                >
+                  {structureBusy ? 'Saving…' : 'Add'}
+                </button>
+                <button
+                  onClick={() => {
+                    setAddingAreaToFloor(null);
+                    setNewAreaName('');
+                  }}
+                  className="text-sm font-semibold text-rsl-navy/50 px-2"
+                >
+                  Cancel
+                </button>
+              </div>
+            ) : (
+              <button
+                onClick={() => setAddingAreaToFloor(activeFloor.id)}
+                className="text-sm font-semibold text-rsl-blue hover:underline"
+              >
+                + Add zone to this floor
+              </button>
+            ))}
+
           <NextFloorPrompt
-            nextFloorName={site.floors.find((f) => f.id === nextIncompleteFloorId())?.name ?? null}
+            nextFloorName={floors.find((f) => f.id === nextIncompleteFloorId())?.name ?? null}
             allComplete={pct === 100}
             onNext={goToNextFloor}
             onViewSummary={() => setView('summary')}
@@ -472,7 +788,7 @@ export default function Inspector({
               {totalPass} passed · {totalFail} failed
             </p>
             <p className="text-xs text-rsl-navy/50 mt-1">
-              {totalItems} items across {site.floors.length} floor{site.floors.length !== 1 && 's'}
+              {totalItems} items across {floors.length} floor{floors.length !== 1 && 's'}
             </p>
           </div>
 
@@ -585,15 +901,51 @@ function SaveIndicator({ status }: { status: SaveStatus }) {
 }
 
 function AreaCard({
+  areaId,
   areaName,
   items,
   state,
   onSetItem,
+  editable = false,
+  isEditingName = false,
+  editingName = '',
+  onStartEditName,
+  onEditNameChange,
+  onSaveName,
+  onCancelEditName,
+  onDelete,
+  editingItemId = null,
+  editingItemName = '',
+  onStartEditItem,
+  onEditItemNameChange,
+  onSaveItemName,
+  onCancelEditItem,
+  isDragging = false,
+  onDragHandlePointerDown,
+  busy = false,
 }: {
+  areaId?: string;
   areaName: string;
   items: { id: string; name: string; category: ItemCategory }[];
   state: AreaState;
   onSetItem: (itemId: string, category: ItemCategory, patch: Partial<ItemState>) => void;
+  editable?: boolean;
+  isEditingName?: boolean;
+  editingName?: string;
+  onStartEditName?: () => void;
+  onEditNameChange?: (v: string) => void;
+  onSaveName?: () => void;
+  onCancelEditName?: () => void;
+  onDelete?: () => void;
+  editingItemId?: string | null;
+  editingItemName?: string;
+  onStartEditItem?: (item: { id: string; name: string }) => void;
+  onEditItemNameChange?: (v: string) => void;
+  onSaveItemName?: (itemId: string) => void;
+  onCancelEditItem?: () => void;
+  isDragging?: boolean;
+  onDragHandlePointerDown?: () => void;
+  busy?: boolean;
 }) {
   const cleaningItem = items.find((i) => i.category === 'cleaning');
   const maintenanceItem = items.find((i) => i.category === 'maintenance');
@@ -609,35 +961,111 @@ function AreaCard({
   return (
     <div
       className={`rounded-2xl border p-4 transition-colors ${
-        allAssessed ? 'border-pass/40 bg-pass/[0.04]' : 'border-rsl-navy/10'
-      }`}
+        isDragging ? 'opacity-50 ring-2 ring-rsl-navy' : ''
+      } ${allAssessed ? 'border-pass/40 bg-pass/[0.04]' : 'border-rsl-navy/10'}`}
     >
-      <div className="flex items-center justify-between mb-3">
-        <h3 className="font-semibold text-rsl-navy">{areaName}</h3>
-        {allAssessed && (
-          <span className="text-xs font-semibold px-3 py-1 rounded-full bg-pass text-white">
-            Area Complete ✓
-          </span>
-        )}
+      <div className="flex items-center justify-between mb-3 gap-2">
+        <div className="flex items-center gap-2 min-w-0">
+          {editable && onDragHandlePointerDown && (
+            <button
+              onPointerDown={(e) => {
+                e.preventDefault();
+                onDragHandlePointerDown();
+              }}
+              style={{ touchAction: 'none' }}
+              className="shrink-0 text-rsl-navy/30 hover:text-rsl-navy/60 cursor-grab active:cursor-grabbing px-1"
+              aria-label="Drag to reorder"
+            >
+              ⠿
+            </button>
+          )}
+
+          {isEditingName ? (
+            <div className="flex items-center gap-1.5 min-w-0">
+              <input
+                autoFocus
+                value={editingName}
+                onChange={(e) => onEditNameChange?.(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') onSaveName?.();
+                  if (e.key === 'Escape') onCancelEditName?.();
+                }}
+                className="text-sm font-semibold text-rsl-navy rounded-lg border border-rsl-navy/20 px-2 py-1 min-w-0"
+              />
+              <button onClick={onSaveName} className="text-pass text-xs font-semibold shrink-0">
+                Save
+              </button>
+              <button onClick={onCancelEditName} className="text-rsl-navy/40 text-xs font-semibold shrink-0">
+                Cancel
+              </button>
+            </div>
+          ) : (
+            <h3 className="font-semibold text-rsl-navy truncate">{areaName}</h3>
+          )}
+
+          {editable && !isEditingName && (
+            <button
+              onClick={onStartEditName}
+              className="shrink-0 text-rsl-navy/30 hover:text-rsl-navy/60 text-xs"
+              aria-label="Rename zone"
+            >
+              ✎
+            </button>
+          )}
+        </div>
+
+        <div className="flex items-center gap-2 shrink-0">
+          {allAssessed && (
+            <span className="text-xs font-semibold px-3 py-1 rounded-full bg-pass text-white">
+              Area Complete ✓
+            </span>
+          )}
+          {editable && onDelete && (
+            <button
+              onClick={onDelete}
+              disabled={busy}
+              className="text-rsl-navy/30 hover:text-rsl-red text-xs disabled:opacity-40"
+              aria-label="Remove zone"
+            >
+              🗑
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         {cleaningItem && (
           <PassFailPanel
             label="Cleaning"
+            itemName={cleaningItem.name}
             item={state.items[cleaningItem.id]}
             onChange={(patch) => onSetItem(cleaningItem.id, 'cleaning', patch)}
             commentKey="cComment"
             passKey="cleaningPass"
+            editable={editable}
+            isEditingName={editingItemId === cleaningItem.id}
+            editingName={editingItemName}
+            onStartEditName={() => onStartEditItem?.(cleaningItem)}
+            onEditNameChange={onEditItemNameChange}
+            onSaveName={() => onSaveItemName?.(cleaningItem.id)}
+            onCancelEditName={onCancelEditItem}
           />
         )}
         {maintenanceItem && (
           <PassFailPanel
             label="Maintenance"
+            itemName={maintenanceItem.name}
             item={state.items[maintenanceItem.id]}
             onChange={(patch) => onSetItem(maintenanceItem.id, 'maintenance', patch)}
             commentKey="mComment"
             passKey="maintenancePass"
+            editable={editable}
+            isEditingName={editingItemId === maintenanceItem.id}
+            editingName={editingItemName}
+            onStartEditName={() => onStartEditItem?.(maintenanceItem)}
+            onEditNameChange={onEditItemNameChange}
+            onSaveName={() => onSaveItemName?.(maintenanceItem.id)}
+            onCancelEditName={onCancelEditItem}
           />
         )}
       </div>
@@ -647,22 +1075,75 @@ function AreaCard({
 
 function PassFailPanel({
   label,
+  itemName,
   item,
   onChange,
   commentKey,
   passKey,
+  editable = false,
+  isEditingName = false,
+  editingName = '',
+  onStartEditName,
+  onEditNameChange,
+  onSaveName,
+  onCancelEditName,
 }: {
   label: string;
+  itemName?: string;
   item: ItemState;
   onChange: (patch: Partial<ItemState>) => void;
   commentKey: 'cComment' | 'mComment';
   passKey: 'cleaningPass' | 'maintenancePass';
+  editable?: boolean;
+  isEditingName?: boolean;
+  editingName?: string;
+  onStartEditName?: () => void;
+  onEditNameChange?: (v: string) => void;
+  onSaveName?: () => void;
+  onCancelEditName?: () => void;
 }) {
   const isFail = item[passKey] === false;
 
   return (
     <div className="rounded-xl bg-rsl-navy/[0.03] p-3">
-      <div className="text-xs font-semibold text-rsl-navy/50 mb-2">{label}</div>
+      <div className="flex items-center gap-1.5 mb-2">
+        {isEditingName ? (
+          <>
+            <input
+              autoFocus
+              value={editingName}
+              onChange={(e) => onEditNameChange?.(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') onSaveName?.();
+                if (e.key === 'Escape') onCancelEditName?.();
+              }}
+              className="text-xs font-semibold rounded-lg border border-rsl-navy/20 px-1.5 py-0.5 min-w-0"
+            />
+            <button onClick={onSaveName} className="text-pass text-xs font-semibold">
+              ✓
+            </button>
+            <button onClick={onCancelEditName} className="text-rsl-navy/40 text-xs font-semibold">
+              ✕
+            </button>
+          </>
+        ) : (
+          <>
+            <span className="text-xs font-semibold text-rsl-navy/50">
+              {label}
+              {itemName ? ` · ${itemName}` : ''}
+            </span>
+            {editable && (
+              <button
+                onClick={onStartEditName}
+                className="text-rsl-navy/30 hover:text-rsl-navy/60 text-[10px]"
+                aria-label={`Rename ${label} item`}
+              >
+                ✎
+              </button>
+            )}
+          </>
+        )}
+      </div>
       <div className="flex gap-2 mb-2">
         <button
           onClick={() => onChange({ [passKey]: true } as Partial<ItemState>)}
