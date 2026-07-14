@@ -42,7 +42,7 @@ export default function Inspector({
   const supabase = useMemo(() => supabaseBrowser(), []);
 
   const [activeFloorId, setActiveFloorId] = useState(site.floors[0]?.id ?? '');
-  const [view, setView] = useState<'floor' | 'attention'>('floor');
+  const [view, setView] = useState<'floor' | 'attention' | 'summary'>('floor');
   const [areaState, setAreaState] = useState<Record<string, AreaState>>(() => {
     const init: Record<string, AreaState> = {};
     site.floors.forEach((f) =>
@@ -218,6 +218,7 @@ export default function Inspector({
   useEffect(() => {
     if (pct !== 100 || loading || completionHandled.current || !inspectionIdRef.current) return;
     completionHandled.current = true;
+    setView('summary');
 
     (async () => {
       const inspectionId = inspectionIdRef.current!;
@@ -301,6 +302,22 @@ export default function Inspector({
       )
     );
 
+  // Per-floor pass/fail tallies for the Summary screen
+  const floorStats = site.floors.map((f) => {
+    const items = f.areas.flatMap((a) => a.items.map((it) => ({ areaId: a.id, itemId: it.id })));
+    let pass = 0;
+    let fail = 0;
+    for (const { areaId, itemId } of items) {
+      const s = areaState[areaId]?.items[itemId];
+      if (s?.cleaningPass === true || s?.maintenancePass === true) pass += 1;
+      if (s?.cleaningPass === false || s?.maintenancePass === false) fail += 1;
+    }
+    return { floor: f, total: items.length, pass, fail };
+  });
+
+  const totalPass = floorStats.reduce((sum, s) => sum + s.pass, 0);
+  const totalFail = floorStats.reduce((sum, s) => sum + s.fail, 0);
+
   if (loading) {
     return (
       <div className="max-w-3xl mx-auto px-6 py-16 text-center text-sm text-rsl-navy/50">
@@ -342,6 +359,16 @@ export default function Inspector({
             >
               Needs Attention {failedAreas.length > 0 && `(${failedAreas.length})`}
             </button>
+            {pct === 100 && (
+              <button
+                onClick={() => setView('summary')}
+                className={`text-xs font-semibold px-3 py-1.5 rounded-full transition-colors ${
+                  view === 'summary' ? 'bg-pass text-white' : 'text-rsl-navy/60'
+                }`}
+              >
+                Summary
+              </button>
+            )}
           </div>
         </div>
         <div className="h-1.5 rounded-full bg-rsl-navy/10 overflow-hidden">
@@ -352,7 +379,7 @@ export default function Inspector({
           <div className="flex gap-1.5 overflow-x-auto mt-3 pb-1 -mx-1 px-1">
             {site.floors.map((f) => {
               const status = floorStatus(f.id);
-              const pct = floorPct(f.id);
+              const floorPercent = floorPct(f.id);
               return (
                 <button
                   key={f.id}
@@ -371,7 +398,7 @@ export default function Inspector({
                   <span
                     className={`ml-1.5 ${activeFloorId === f.id ? 'text-white/60' : 'opacity-60'}`}
                   >
-                    {pct}%
+                    {floorPercent}%
                   </span>
                 </button>
               );
@@ -401,6 +428,7 @@ export default function Inspector({
             nextFloorName={site.floors.find((f) => f.id === nextIncompleteFloorId())?.name ?? null}
             allComplete={pct === 100}
             onNext={goToNextFloor}
+            onViewSummary={() => setView('summary')}
           />
         </div>
       )}
@@ -432,6 +460,76 @@ export default function Inspector({
           ))}
         </div>
       )}
+
+      {/* Summary view — shown once every item across every floor has been assessed */}
+      {view === 'summary' && (
+        <div className="mt-5 space-y-5">
+          <div className="rounded-2xl border border-pass/30 bg-pass/5 p-5 text-center">
+            <p className="text-xs font-semibold uppercase tracking-wide text-pass mb-1">
+              Inspection Complete
+            </p>
+            <p className="text-2xl font-display font-bold text-rsl-navy">
+              {totalPass} passed · {totalFail} failed
+            </p>
+            <p className="text-xs text-rsl-navy/50 mt-1">
+              {totalItems} items across {site.floors.length} floor{site.floors.length !== 1 && 's'}
+            </p>
+          </div>
+
+          <div>
+            <h3 className="font-display font-bold text-rsl-navy text-sm mb-2">By floor</h3>
+            <div className="border border-rsl-navy/10 rounded-2xl overflow-hidden">
+              <table className="w-full text-sm">
+                <thead className="bg-rsl-navy/5 text-rsl-navy/50 text-left">
+                  <tr>
+                    <th className="font-semibold px-4 py-2.5">Floor</th>
+                    <th className="font-semibold px-4 py-2.5 text-right">Pass</th>
+                    <th className="font-semibold px-4 py-2.5 text-right">Fail</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {floorStats.map(({ floor, pass, fail }) => (
+                    <tr key={floor.id} className="border-t border-rsl-navy/5">
+                      <td className="px-4 py-2.5 text-rsl-navy">{floor.name}</td>
+                      <td className="px-4 py-2.5 text-right text-pass font-semibold">{pass}</td>
+                      <td className="px-4 py-2.5 text-right font-semibold text-rsl-red">
+                        {fail || '—'}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {failedAreas.length > 0 && (
+            <div>
+              <h3 className="font-display font-bold text-rsl-red text-sm mb-2">
+                Fail details — {failedAreas.length} area{failedAreas.length !== 1 && 's'}
+              </h3>
+              <div className="space-y-4">
+                {failedAreas.map(({ floor, area: a }) => (
+                  <div key={a.id}>
+                    <div className="text-xs uppercase tracking-wide text-rsl-navy/40 font-semibold mb-1.5">
+                      {floor.name}
+                    </div>
+                    <AreaCard
+                      areaName={a.name}
+                      items={a.items}
+                      state={areaState[a.id]}
+                      onSetItem={(itemId, category, patch) => setItem(a.id, itemId, category, patch)}
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <p className="text-xs text-rsl-navy/40 text-center pt-2">
+            Report download and email will be available here once report generation is built.
+          </p>
+        </div>
+      )}
     </div>
   );
 }
@@ -440,17 +538,25 @@ function NextFloorPrompt({
   nextFloorName,
   allComplete,
   onNext,
+  onViewSummary,
 }: {
   nextFloorName: string | null;
   allComplete: boolean;
   onNext: () => void;
+  onViewSummary: () => void;
 }) {
   if (allComplete) {
     return (
-      <div className="rounded-2xl border border-pass/30 bg-pass/5 p-4 text-center">
+      <div className="rounded-2xl border border-pass/30 bg-pass/5 p-4 text-center space-y-2">
         <p className="text-sm font-semibold text-pass">
           All floors complete — inspection ready to submit.
         </p>
+        <button
+          onClick={onViewSummary}
+          className="text-sm font-semibold text-white bg-pass rounded-lg px-4 py-2"
+        >
+          View Summary
+        </button>
       </div>
     );
   }
