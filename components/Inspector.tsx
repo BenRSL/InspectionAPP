@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { supabaseBrowser } from '@/lib/supabase-browser';
 import type { Site, Floor, FloorArea, ItemCategory } from '@/lib/sites';
 
@@ -12,6 +12,7 @@ interface ItemState {
   maintenancePass: PassState;
   cComment: string;
   mComment: string;
+  photoUrls: string[]; // storage paths in the inspection-photos bucket, max 2
 }
 
 interface AreaState {
@@ -19,7 +20,7 @@ interface AreaState {
 }
 
 function emptyItemState(): ItemState {
-  return { cleaningPass: null, maintenancePass: null, cComment: '', mComment: '' };
+  return { cleaningPass: null, maintenancePass: null, cComment: '', mComment: '', photoUrls: [] };
 }
 
 // First day of the current month, e.g. '2026-07-01' — matches inspections.period_month (date)
@@ -69,6 +70,10 @@ export default function Inspector({
   const [draggingAreaId, setDraggingAreaId] = useState<string | null>(null);
   const dragFloorId = useRef<string | null>(null);
   const areaCardRefs = useRef<Record<string, HTMLDivElement | null>>({});
+
+  const [photoUploadState, setPhotoUploadState] = useState<
+    Record<string, { busy: boolean; error: string | null }>
+  >({});
 
   const [areaState, setAreaState] = useState<Record<string, AreaState>>(() => {
     const init: Record<string, AreaState> = {};
@@ -135,7 +140,7 @@ export default function Inspector({
 
       const { data: savedItems, error: itemsErr } = await supabase
         .from('inspection_items')
-        .select('checklist_item_id, result, comment')
+        .select('checklist_item_id, result, comment, photo_urls')
         .eq('inspection_id', inspectionId);
 
       if (itemsErr) {
@@ -158,6 +163,7 @@ export default function Inspector({
                 state.maintenancePass = row.result === 'pass';
                 state.mComment = row.comment ?? '';
               }
+              state.photoUrls = row.photo_urls ?? [];
             }
           }
           return next;
@@ -182,22 +188,24 @@ export default function Inspector({
 
   // ---- Autosave: upsert one inspection_items row per checklist item.
   // Unique(inspection_id, checklist_item_id) makes this a safe upsert — no duplicate-row risk. ----
-  async function saveResult(itemId: string, result: 'pass' | 'fail', comment: string) {
+  async function saveResult(itemId: string, result: 'pass' | 'fail', comment: string, photoUrls?: string[]) {
     const inspectionId = inspectionIdRef.current;
     if (!inspectionId) return;
 
     pendingSaves.current += 1;
     setSaveStatus('saving');
 
-    const { error } = await supabase.from('inspection_items').upsert(
-      {
-        inspection_id: inspectionId,
-        checklist_item_id: itemId,
-        result,
-        comment: comment || null,
-      },
-      { onConflict: 'inspection_id,checklist_item_id' }
-    );
+    const payload: Record<string, unknown> = {
+      inspection_id: inspectionId,
+      checklist_item_id: itemId,
+      result,
+      comment: comment || null,
+    };
+    if (photoUrls !== undefined) payload.photo_urls = photoUrls;
+
+    const { error } = await supabase
+      .from('inspection_items')
+      .upsert(payload, { onConflict: 'inspection_id,checklist_item_id' });
 
     pendingSaves.current -= 1;
     if (error) {
@@ -223,7 +231,8 @@ export default function Inspector({
       const passValue = patch[passKey as keyof ItemState] as PassState;
       if (passValue !== null) {
         const comment = (patch[commentKey as keyof ItemState] as string) ?? areaState[areaId].items[itemId][commentKey];
-        saveResult(itemId, passValue ? 'pass' : 'fail', comment);
+        const photoUrls = (patch.photoUrls as string[] | undefined) ?? areaState[areaId].items[itemId].photoUrls;
+        saveResult(itemId, passValue ? 'pass' : 'fail', comment, photoUrls);
       }
       return;
     }
@@ -235,8 +244,17 @@ export default function Inspector({
       clearTimeout(commentTimers.current[itemId]);
       commentTimers.current[itemId] = setTimeout(() => {
         const newComment = patch[commentKey as keyof ItemState] as string;
-        saveResult(itemId, currentPass ? 'pass' : 'fail', newComment);
+        saveResult(itemId, currentPass ? 'pass' : 'fail', newComment, areaState[areaId].items[itemId].photoUrls);
       }, 600);
+    }
+
+    // Photo changes save immediately, same as Pass/Fail — but only if a result already exists
+    if ('photoUrls' in patch) {
+      const currentPass = areaState[areaId].items[itemId][passKey];
+      if (currentPass === null) return;
+      const comment = areaState[areaId].items[itemId][commentKey];
+      const photoUrls = patch.photoUrls as string[];
+      saveResult(itemId, currentPass ? 'pass' : 'fail', comment, photoUrls);
     }
   }
 
@@ -529,6 +547,90 @@ export default function Inspector({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [draggingAreaId]);
 
+  // ---- Photo upload: resize/compress client-side before uploading, since field
+  // photos from phones are often 3-10MB and site wifi can be patchy ----
+  function compressImage(file: File, maxDim = 1600, quality = 0.8): Promise<Blob> {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      const objectUrl = URL.createObjectURL(file);
+      img.onload = () => {
+        let { width, height } = img;
+        if (width > maxDim || height > maxDim) {
+          const scale = maxDim / Math.max(width, height);
+          width = Math.round(width * scale);
+          height = Math.round(height * scale);
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        URL.revokeObjectURL(objectUrl);
+        if (!ctx) {
+          resolve(file);
+          return;
+        }
+        ctx.drawImage(img, 0, 0, width, height);
+        canvas.toBlob((blob) => resolve(blob ?? file), 'image/jpeg', quality);
+      };
+      img.onerror = () => {
+        URL.revokeObjectURL(objectUrl);
+        reject(new Error('Could not read that image'));
+      };
+      img.src = objectUrl;
+    });
+  }
+
+  function resolvePhotoUrl(path: string): string {
+    return supabase.storage.from('inspection-photos').getPublicUrl(path).data.publicUrl;
+  }
+
+  function findAreaForItem(itemId: string): FloorArea | undefined {
+    return floors.flatMap((f) => f.areas).find((a) => a.items.some((it) => it.id === itemId));
+  }
+
+  async function uploadPhoto(itemId: string, category: ItemCategory, file: File) {
+    const inspectionId = inspectionIdRef.current;
+    const area = findAreaForItem(itemId);
+    if (!inspectionId || !area) return;
+
+    const currentUrls = areaState[area.id]?.items[itemId]?.photoUrls ?? [];
+    if (currentUrls.length >= 2) return;
+
+    setPhotoUploadState((prev) => ({ ...prev, [itemId]: { busy: true, error: null } }));
+
+    try {
+      const blob = await compressImage(file);
+      const path = `${inspectionId}/${itemId}/${crypto.randomUUID()}.jpg`;
+
+      const { error: uploadErr } = await supabase.storage
+        .from('inspection-photos')
+        .upload(path, blob, { contentType: 'image/jpeg', upsert: false });
+
+      if (uploadErr) throw uploadErr;
+
+      const nextUrls = [...currentUrls, path];
+      setItem(area.id, itemId, category, { photoUrls: nextUrls });
+      setPhotoUploadState((prev) => ({ ...prev, [itemId]: { busy: false, error: null } }));
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Upload failed';
+      setPhotoUploadState((prev) => ({ ...prev, [itemId]: { busy: false, error: message } }));
+    }
+  }
+
+  async function removePhoto(itemId: string, category: ItemCategory, path: string) {
+    const area = findAreaForItem(itemId);
+    if (!area) return;
+
+    const currentUrls = areaState[area.id]?.items[itemId]?.photoUrls ?? [];
+    const nextUrls = currentUrls.filter((p) => p !== path);
+    setItem(area.id, itemId, category, { photoUrls: nextUrls });
+
+    const { error } = await supabase.storage.from('inspection-photos').remove([path]);
+    if (error) {
+      setPhotoUploadState((prev) => ({ ...prev, [itemId]: { busy: false, error: error.message } }));
+    }
+  }
+
   const activeFloor = floors.find((f) => f.id === activeFloorId);
 
   const failedAreas = floors
@@ -700,6 +802,10 @@ export default function Inspector({
                 isDragging={draggingAreaId === a.id}
                 onDragHandlePointerDown={() => startDragArea(activeFloor.id, a.id)}
                 busy={structureBusy}
+                onUploadPhoto={uploadPhoto}
+                onRemovePhoto={removePhoto}
+                resolvePhotoUrl={resolvePhotoUrl}
+                photoUploadState={photoUploadState}
               />
             </div>
           ))}
@@ -771,6 +877,10 @@ export default function Inspector({
                 items={a.items}
                 state={areaState[a.id]}
                 onSetItem={(itemId, category, patch) => setItem(a.id, itemId, category, patch)}
+                onUploadPhoto={uploadPhoto}
+                onRemovePhoto={removePhoto}
+                resolvePhotoUrl={resolvePhotoUrl}
+                photoUploadState={photoUploadState}
               />
             </div>
           ))}
@@ -834,6 +944,10 @@ export default function Inspector({
                       items={a.items}
                       state={areaState[a.id]}
                       onSetItem={(itemId, category, patch) => setItem(a.id, itemId, category, patch)}
+                      onUploadPhoto={uploadPhoto}
+                      onRemovePhoto={removePhoto}
+                      resolvePhotoUrl={resolvePhotoUrl}
+                      photoUploadState={photoUploadState}
                     />
                   </div>
                 ))}
@@ -923,6 +1037,10 @@ function AreaCard({
   isDragging = false,
   onDragHandlePointerDown,
   busy = false,
+  onUploadPhoto,
+  onRemovePhoto,
+  resolvePhotoUrl,
+  photoUploadState = {},
 }: {
   areaId?: string;
   areaName: string;
@@ -946,6 +1064,10 @@ function AreaCard({
   isDragging?: boolean;
   onDragHandlePointerDown?: () => void;
   busy?: boolean;
+  onUploadPhoto?: (itemId: string, category: ItemCategory, file: File) => void;
+  onRemovePhoto?: (itemId: string, category: ItemCategory, path: string) => void;
+  resolvePhotoUrl?: (path: string) => string;
+  photoUploadState?: Record<string, { busy: boolean; error: string | null }>;
 }) {
   const cleaningItem = items.find((i) => i.category === 'cleaning');
   const maintenanceItem = items.find((i) => i.category === 'maintenance');
@@ -1049,6 +1171,13 @@ function AreaCard({
             onEditNameChange={onEditItemNameChange}
             onSaveName={() => onSaveItemName?.(cleaningItem.id)}
             onCancelEditName={onCancelEditItem}
+            onUploadPhoto={onUploadPhoto ? (file) => onUploadPhoto(cleaningItem.id, 'cleaning', file) : undefined}
+            onRemovePhoto={
+              onRemovePhoto ? (path) => onRemovePhoto(cleaningItem.id, 'cleaning', path) : undefined
+            }
+            resolvePhotoUrl={resolvePhotoUrl}
+            photoBusy={photoUploadState[cleaningItem.id]?.busy ?? false}
+            photoError={photoUploadState[cleaningItem.id]?.error ?? null}
           />
         )}
         {maintenanceItem && (
@@ -1066,6 +1195,15 @@ function AreaCard({
             onEditNameChange={onEditItemNameChange}
             onSaveName={() => onSaveItemName?.(maintenanceItem.id)}
             onCancelEditName={onCancelEditItem}
+            onUploadPhoto={
+              onUploadPhoto ? (file) => onUploadPhoto(maintenanceItem.id, 'maintenance', file) : undefined
+            }
+            onRemovePhoto={
+              onRemovePhoto ? (path) => onRemovePhoto(maintenanceItem.id, 'maintenance', path) : undefined
+            }
+            resolvePhotoUrl={resolvePhotoUrl}
+            photoBusy={photoUploadState[maintenanceItem.id]?.busy ?? false}
+            photoError={photoUploadState[maintenanceItem.id]?.error ?? null}
           />
         )}
       </div>
@@ -1087,6 +1225,11 @@ function PassFailPanel({
   onEditNameChange,
   onSaveName,
   onCancelEditName,
+  onUploadPhoto,
+  onRemovePhoto,
+  resolvePhotoUrl,
+  photoBusy = false,
+  photoError = null,
 }: {
   label: string;
   itemName?: string;
@@ -1101,6 +1244,11 @@ function PassFailPanel({
   onEditNameChange?: (v: string) => void;
   onSaveName?: () => void;
   onCancelEditName?: () => void;
+  onUploadPhoto?: (file: File) => void;
+  onRemovePhoto?: (path: string) => void;
+  resolvePhotoUrl?: (path: string) => string;
+  photoBusy?: boolean;
+  photoError?: string | null;
 }) {
   const isFail = item[passKey] === false;
 
@@ -1172,11 +1320,88 @@ function PassFailPanel({
             onChange={(e) => onChange({ [commentKey]: e.target.value } as Partial<ItemState>)}
             className="w-full text-sm rounded-lg border border-rsl-navy/15 px-3 py-2 focus:border-rsl-red outline-none"
           />
-          <button className="w-full text-xs font-semibold text-rsl-navy/50 border border-dashed border-rsl-navy/20 rounded-lg py-2 hover:border-rsl-red/40 hover:text-rsl-red transition-colors">
-            + Add photo (up to 2)
-          </button>
+          <PhotoUploader
+            photoUrls={item.photoUrls}
+            resolvePhotoUrl={resolvePhotoUrl}
+            onUploadPhoto={onUploadPhoto}
+            onRemovePhoto={onRemovePhoto}
+            busy={photoBusy}
+            error={photoError}
+          />
         </div>
       )}
+    </div>
+  );
+}
+
+function PhotoUploader({
+  photoUrls,
+  resolvePhotoUrl,
+  onUploadPhoto,
+  onRemovePhoto,
+  busy,
+  error,
+}: {
+  photoUrls: string[];
+  resolvePhotoUrl?: (path: string) => string;
+  onUploadPhoto?: (file: File) => void;
+  onRemovePhoto?: (path: string) => void;
+  busy: boolean;
+  error: string | null;
+}) {
+  const inputId = useId();
+  const atLimit = photoUrls.length >= 2;
+
+  return (
+    <div className="space-y-1.5">
+      {photoUrls.length > 0 && (
+        <div className="flex gap-2">
+          {photoUrls.map((path) => (
+            <div key={path} className="relative w-16 h-16 shrink-0">
+              {resolvePhotoUrl && (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={resolvePhotoUrl(path)}
+                  alt="Inspection photo"
+                  className="w-16 h-16 object-cover rounded-lg border border-rsl-navy/10"
+                />
+              )}
+              {onRemovePhoto && (
+                <button
+                  onClick={() => onRemovePhoto(path)}
+                  className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-rsl-navy text-white text-xs flex items-center justify-center"
+                  aria-label="Remove photo"
+                >
+                  ✕
+                </button>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {!atLimit && onUploadPhoto && (
+        <label
+          htmlFor={inputId}
+          className="w-full block text-center text-xs font-semibold text-rsl-navy/50 border border-dashed border-rsl-navy/20 rounded-lg py-2 hover:border-rsl-red/40 hover:text-rsl-red transition-colors cursor-pointer"
+        >
+          {busy ? 'Uploading…' : `+ Add photo (${photoUrls.length}/2)`}
+          <input
+            id={inputId}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            disabled={busy}
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file) onUploadPhoto(file);
+              e.target.value = '';
+            }}
+          />
+        </label>
+      )}
+
+      {error && <p className="text-xs text-rsl-red">{error}</p>}
     </div>
   );
 }
