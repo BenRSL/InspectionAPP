@@ -14,6 +14,9 @@ export default async function SiteInspectionPage({ params }: { params: { siteId:
   } = await supabase.auth.getUser();
   if (!user) notFound(); // middleware.ts already guards this route; belt-and-braces only
 
+  const { data: userRow } = await supabase.from('users').select('role').eq('id', user.id).maybeSingle();
+  const canClearInspections = userRow?.role === 'god_mode' || userRow?.role === 'admin';
+
   // params.siteId is the slug (e.g. 'anzac-house'), matching the site switcher links
   const { data: siteRow } = await supabase
     .from('sites')
@@ -91,6 +94,7 @@ export default async function SiteInspectionPage({ params }: { params: { siteId:
           siteDbId={siteRow.id}
           inspectorId={user.id}
           monthlyOnboardingRemaining={siteRow.monthly_onboarding_inspections_remaining}
+          canClearInspections={canClearInspections}
         />
       ) : (
         <div className="max-w-3xl mx-auto px-6 py-16 text-center">
