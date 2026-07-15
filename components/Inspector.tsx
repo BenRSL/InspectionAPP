@@ -3,6 +3,7 @@
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { supabaseBrowser } from '@/lib/supabase-browser';
 import type { Site, Floor, FloorArea, ItemCategory } from '@/lib/sites';
+import { CLEANING_PHRASES, MAINTENANCE_PHRASES } from '@/lib/common-phrases';
 
 type PassState = boolean | null; // null = not yet assessed
 type SaveStatus = 'idle' | 'saving' | 'saved' | 'error';
@@ -644,13 +645,11 @@ export default function Inspector({
       if (!res.ok) throw new Error('Could not generate the report');
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `${site.name.replace(/[^a-z0-9]+/gi, '-')}-inspection-report.pdf`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
+      // Opens in a new tab using the browser's native PDF viewer, which has its own
+      // print and save/download controls — friendlier than silently forcing a save.
+      window.open(url, '_blank');
+      // Give the new tab time to load the blob before revoking it.
+      setTimeout(() => URL.revokeObjectURL(url), 30000);
     } catch (err) {
       setReportMessage(err instanceof Error ? err.message : 'Download failed');
     } finally {
@@ -1006,7 +1005,7 @@ export default function Inspector({
                 disabled={reportBusy !== null}
                 className="flex-1 text-sm font-semibold text-rsl-navy border border-rsl-navy/20 rounded-xl py-3 disabled:opacity-40"
               >
-                {reportBusy === 'download' ? 'Generating…' : 'Download PDF'}
+                {reportBusy === 'download' ? 'Generating…' : 'View / Print PDF'}
               </button>
               <button
                 onClick={emailReport}
@@ -1386,6 +1385,11 @@ function PassFailPanel({
             onChange={(e) => onChange({ [commentKey]: e.target.value } as Partial<ItemState>)}
             className="w-full text-sm rounded-lg border border-rsl-navy/15 px-3 py-2 focus:border-rsl-red outline-none"
           />
+          <PhraseChips
+            category={passKey === 'cleaningPass' ? 'cleaning' : 'maintenance'}
+            value={item[commentKey]}
+            onSelect={(phrase) => onChange({ [commentKey]: phrase } as Partial<ItemState>)}
+          />
           <PhotoUploader
             photoUrls={item.photoUrls}
             resolvePhotoUrl={resolvePhotoUrl}
@@ -1396,6 +1400,40 @@ function PassFailPanel({
           />
         </div>
       )}
+    </div>
+  );
+}
+
+function PhraseChips({
+  category,
+  value,
+  onSelect,
+}: {
+  category: ItemCategory;
+  value: string;
+  onSelect: (phrase: string) => void;
+}) {
+  const phrases = category === 'cleaning' ? CLEANING_PHRASES : MAINTENANCE_PHRASES;
+  const query = value.trim().toLowerCase();
+  // Empty comment: show a starter set. Typing: filter down to matches anywhere in
+  // the phrase (not just the start), so "paint" surfaces both "Cracked paint" and
+  // "Patch paint required".
+  const matches = query ? phrases.filter((p) => p.toLowerCase().includes(query)) : phrases.slice(0, 6);
+
+  if (matches.length === 0) return null;
+
+  return (
+    <div className="flex flex-wrap gap-1.5">
+      {matches.map((phrase) => (
+        <button
+          key={phrase}
+          type="button"
+          onClick={() => onSelect(phrase)}
+          className="text-[11px] text-rsl-navy/60 bg-rsl-navy/5 hover:bg-rsl-navy/10 rounded-full px-2.5 py-1"
+        >
+          {phrase}
+        </button>
+      ))}
     </div>
   );
 }
