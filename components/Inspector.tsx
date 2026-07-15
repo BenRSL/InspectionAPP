@@ -35,11 +35,13 @@ export default function Inspector({
   siteDbId,
   inspectorId,
   monthlyOnboardingRemaining,
+  canClearInspections,
 }: {
   site: Site;
   siteDbId: string;
   inspectorId: string;
   monthlyOnboardingRemaining: number;
+  canClearInspections: boolean;
 }) {
   const supabase = useMemo(() => supabaseBrowser(), []);
 
@@ -79,6 +81,11 @@ export default function Inspector({
   const [reportBusy, setReportBusy] = useState<'download' | 'email' | null>(null);
   const [reportMessage, setReportMessage] = useState<string | null>(null);
 
+  const [inspectionStatus, setInspectionStatus] = useState<'in_progress' | 'complete' | null>(null);
+  const [inspectionCompletedAt, setInspectionCompletedAt] = useState<string | null>(null);
+  const [clearBusy, setClearBusy] = useState(false);
+  const [clearError, setClearError] = useState<string | null>(null);
+
   const [areaState, setAreaState] = useState<Record<string, AreaState>>(() => {
     const init: Record<string, AreaState> = {};
     site.floors.forEach((f) =>
@@ -112,7 +119,7 @@ export default function Inspector({
 
       const { data: existing, error: findErr } = await supabase
         .from('inspections')
-        .select('id, status')
+        .select('id, status, completed_at')
         .eq('site_id', siteDbId)
         .eq('period_month', periodMonth)
         .maybeSingle();
@@ -138,6 +145,10 @@ export default function Inspector({
         inspectionId = created.id;
       } else if (existing?.status === 'complete') {
         completionHandled.current = true; // already completed in a prior session — don't re-decrement
+        if (!cancelled) {
+          setInspectionStatus('complete');
+          setInspectionCompletedAt(existing.completed_at);
+        }
       }
 
       inspectionIdRef.current = inspectionId;
@@ -271,10 +282,14 @@ export default function Inspector({
 
     (async () => {
       const inspectionId = inspectionIdRef.current!;
+      const completedAt = new Date().toISOString();
       await supabase
         .from('inspections')
-        .update({ status: 'complete', completed_at: new Date().toISOString() })
+        .update({ status: 'complete', completed_at: completedAt })
         .eq('id', inspectionId);
+
+      setInspectionStatus('complete');
+      setInspectionCompletedAt(completedAt);
 
       if (monthlyOnboardingRemaining > 0) {
         await supabase
@@ -640,17 +655,33 @@ export default function Inspector({
     if (!inspectionId) return;
     setReportBusy('download');
     setReportMessage(null);
+
+    // Open the tab synchronously, before any await — browsers only trust
+    // window.open() to skip the popup blocker when it's called directly inside
+    // the click handler. Doing this after an awaited fetch gets silently blocked
+    // with no error, which is exactly what looked like "nothing happened."
+    const newTab = window.open('', '_blank');
+
     try {
       const res = await fetch(`/api/reports/${inspectionId}/pdf`);
       if (!res.ok) throw new Error('Could not generate the report');
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
-      // Opens in a new tab using the browser's native PDF viewer, which has its own
-      // print and save/download controls — friendlier than silently forcing a save.
-      window.open(url, '_blank');
-      // Give the new tab time to load the blob before revoking it.
+
+      if (newTab) {
+        newTab.location.href = url;
+      } else {
+        // Even the empty tab got blocked — fall back to forcing a direct download.
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `${site.name.replace(/[^a-z0-9]+/gi, '-')}-inspection-report.pdf`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+      }
       setTimeout(() => URL.revokeObjectURL(url), 30000);
     } catch (err) {
+      newTab?.close();
       setReportMessage(err instanceof Error ? err.message : 'Download failed');
     } finally {
       setReportBusy(null);
@@ -671,6 +702,79 @@ export default function Inspector({
       setReportMessage(err instanceof Error ? err.message : 'Send failed');
     } finally {
       setReportBusy(null);
+    }
+  }
+
+  // Wipes this month's inspection back to a blank slate: deletes saved answers and
+  // uploaded photos, resets the inspection to in_progress, and resets the site's
+  // onboarding counter to 3. That last part is deliberate — this is a "pretend this
+  // never happened" reset for testing/training, not something a real completed
+  // inspection should ever go through, so it shouldn't count against the site's
+  // real first-3-inspections editing window.
+  async function clearInspection() {
+    const inspectionId = inspectionIdRef.current;
+    if (!inspectionId) return;
+    if (
+      !window.confirm(
+        'Clear this inspection? This deletes every saved answer and photo for this month and resets the zone/item editing counter back to 3. This cannot be undone.'
+      )
+    )
+      return;
+
+    setClearBusy(true);
+    setClearError(null);
+
+    try {
+      const { data: photoFiles } = await supabase.storage.from('inspection-photos').list(inspectionId);
+      if (photoFiles && photoFiles.length > 0) {
+        // Photos are nested one folder deeper, per checklist item id.
+        const nested = await Promise.all(
+          photoFiles.map((f) => supabase.storage.from('inspection-photos').list(`${inspectionId}/${f.name}`))
+        );
+        const paths = nested.flatMap((res, i) =>
+          (res.data ?? []).map((file) => `${inspectionId}/${photoFiles[i].name}/${file.name}`)
+        );
+        if (paths.length > 0) {
+          await supabase.storage.from('inspection-photos').remove(paths);
+        }
+      }
+
+      const { error: deleteErr } = await supabase
+        .from('inspection_items')
+        .delete()
+        .eq('inspection_id', inspectionId);
+      if (deleteErr) throw deleteErr;
+
+      const { error: updateErr } = await supabase
+        .from('inspections')
+        .update({ status: 'in_progress', completed_at: null })
+        .eq('id', inspectionId);
+      if (updateErr) throw updateErr;
+
+      const { error: siteErr } = await supabase
+        .from('sites')
+        .update({ monthly_onboarding_inspections_remaining: 3 })
+        .eq('id', siteDbId);
+      if (siteErr) throw siteErr;
+
+      // Reset all local state back to a fresh blank inspection.
+      setAreaState(() => {
+        const initial: Record<string, AreaState> = {};
+        for (const area of site.floors.flatMap((f) => f.areas)) {
+          const items: Record<string, ItemState> = {};
+          area.items.forEach((it) => (items[it.id] = emptyItemState()));
+          initial[area.id] = { items };
+        }
+        return initial;
+      });
+      completionHandled.current = false;
+      setInspectionStatus('in_progress');
+      setInspectionCompletedAt(null);
+      setView('floor');
+    } catch (err) {
+      setClearError(err instanceof Error ? err.message : 'Could not clear this inspection');
+    } finally {
+      setClearBusy(false);
     }
   }
 
@@ -720,6 +824,31 @@ export default function Inspector({
 
   return (
     <div className="max-w-3xl mx-auto px-4 sm:px-6 pb-24">
+      {inspectionStatus === 'complete' && (
+        <div className="mt-4 rounded-xl border border-pass/30 bg-pass/5 p-3.5 flex items-center justify-between gap-3 flex-wrap">
+          <div>
+            <p className="text-sm font-semibold text-pass">
+              Completed {inspectionCompletedAt ? new Date(inspectionCompletedAt).toLocaleDateString('en-AU') : ''}
+            </p>
+            <p className="text-xs text-rsl-navy/50">You can still review or edit answers below.</p>
+          </div>
+          {canClearInspections && (
+            <button
+              onClick={clearInspection}
+              disabled={clearBusy}
+              className="text-xs font-semibold text-rsl-red border border-rsl-red/30 rounded-lg px-3 py-2 disabled:opacity-40 shrink-0"
+            >
+              {clearBusy ? 'Clearing…' : 'Clear & Restart (testing only)'}
+            </button>
+          )}
+        </div>
+      )}
+      {clearError && (
+        <div className="mt-3 rounded-xl bg-rsl-red/5 border border-rsl-red/20 p-3 text-sm text-rsl-red">
+          {clearError}
+        </div>
+      )}
+
       {/* Progress tracker */}
       <div className="sticky top-0 bg-white/95 backdrop-blur z-10 pt-4 pb-3 border-b border-rsl-navy/10">
         <div className="flex items-center justify-between text-sm mb-2 gap-2">
