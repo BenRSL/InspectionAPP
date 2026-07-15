@@ -3,6 +3,7 @@ import { Resend } from 'resend';
 import { buildReportData, renderReportPdf } from '@/lib/report';
 
 export const runtime = 'nodejs';
+export const maxDuration = 30;
 
 // TESTING PHASE — sending only to the tester account while rslqld.org isn't yet
 // domain-verified in Resend. Resend's sandbox sender (onboarding@resend.dev) can
