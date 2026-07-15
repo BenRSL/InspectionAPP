@@ -75,6 +75,9 @@ export default function Inspector({
     Record<string, { busy: boolean; error: string | null }>
   >({});
 
+  const [reportBusy, setReportBusy] = useState<'download' | 'email' | null>(null);
+  const [reportMessage, setReportMessage] = useState<string | null>(null);
+
   const [areaState, setAreaState] = useState<Record<string, AreaState>>(() => {
     const init: Record<string, AreaState> = {};
     site.floors.forEach((f) =>
@@ -631,6 +634,47 @@ export default function Inspector({
     }
   }
 
+  async function downloadReport() {
+    const inspectionId = inspectionIdRef.current;
+    if (!inspectionId) return;
+    setReportBusy('download');
+    setReportMessage(null);
+    try {
+      const res = await fetch(`/api/reports/${inspectionId}/pdf`);
+      if (!res.ok) throw new Error('Could not generate the report');
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${site.name.replace(/[^a-z0-9]+/gi, '-')}-inspection-report.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      setReportMessage(err instanceof Error ? err.message : 'Download failed');
+    } finally {
+      setReportBusy(null);
+    }
+  }
+
+  async function emailReport() {
+    const inspectionId = inspectionIdRef.current;
+    if (!inspectionId) return;
+    setReportBusy('email');
+    setReportMessage(null);
+    try {
+      const res = await fetch(`/api/reports/${inspectionId}/email`, { method: 'POST' });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || 'Could not send the report');
+      setReportMessage(`Sent to ${(json.sentTo as string[]).join(', ')}`);
+    } catch (err) {
+      setReportMessage(err instanceof Error ? err.message : 'Send failed');
+    } finally {
+      setReportBusy(null);
+    }
+  }
+
   const activeFloor = floors.find((f) => f.id === activeFloorId);
 
   const failedAreas = floors
@@ -955,9 +999,31 @@ export default function Inspector({
             </div>
           )}
 
-          <p className="text-xs text-rsl-navy/40 text-center pt-2">
-            Report download and email will be available here once report generation is built.
-          </p>
+          <div className="pt-2 space-y-2">
+            <div className="flex gap-2">
+              <button
+                onClick={downloadReport}
+                disabled={reportBusy !== null}
+                className="flex-1 text-sm font-semibold text-rsl-navy border border-rsl-navy/20 rounded-xl py-3 disabled:opacity-40"
+              >
+                {reportBusy === 'download' ? 'Generating…' : 'Download PDF'}
+              </button>
+              <button
+                onClick={emailReport}
+                disabled={reportBusy !== null}
+                className="flex-1 text-sm font-semibold text-white bg-rsl-navy rounded-xl py-3 disabled:opacity-40"
+              >
+                {reportBusy === 'email' ? 'Sending…' : 'Email Report'}
+              </button>
+            </div>
+            {reportMessage && (
+              <p className="text-xs text-center text-rsl-navy/60">{reportMessage}</p>
+            )}
+            <p className="text-[11px] text-rsl-navy/40 text-center">
+              Email currently goes to the test account only, while rslqld.org is pending domain
+              verification.
+            </p>
+          </div>
         </div>
       )}
     </div>
