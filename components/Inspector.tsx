@@ -3,7 +3,7 @@
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { supabaseBrowser } from '@/lib/supabase-browser';
 import type { Site, Floor, FloorArea, ItemCategory } from '@/lib/sites';
-import { CLEANING_PHRASES, MAINTENANCE_PHRASES } from '@/lib/common-phrases';
+import { CLEANING_PHRASES, MAINTENANCE_PHRASES, type Phrase } from '@/lib/common-phrases';
 
 type PassState = boolean | null; // null = not yet assessed
 type SaveStatus = 'idle' | 'saving' | 'saved' | 'error';
@@ -1354,6 +1354,7 @@ function AreaCard({
           <PassFailPanel
             label="Cleaning"
             itemName={cleaningItem.name}
+            areaName={areaName}
             item={state.items[cleaningItem.id]}
             onChange={(patch) => onSetItem(cleaningItem.id, 'cleaning', patch)}
             commentKey="cComment"
@@ -1378,6 +1379,7 @@ function AreaCard({
           <PassFailPanel
             label="Maintenance"
             itemName={maintenanceItem.name}
+            areaName={areaName}
             item={state.items[maintenanceItem.id]}
             onChange={(patch) => onSetItem(maintenanceItem.id, 'maintenance', patch)}
             commentKey="mComment"
@@ -1408,6 +1410,7 @@ function AreaCard({
 function PassFailPanel({
   label,
   itemName,
+  areaName,
   item,
   onChange,
   commentKey,
@@ -1427,6 +1430,7 @@ function PassFailPanel({
 }: {
   label: string;
   itemName?: string;
+  areaName: string;
   item: ItemState;
   onChange: (patch: Partial<ItemState>) => void;
   commentKey: 'cComment' | 'mComment';
@@ -1516,6 +1520,7 @@ function PassFailPanel({
           />
           <PhraseChips
             category={passKey === 'cleaningPass' ? 'cleaning' : 'maintenance'}
+            areaName={areaName}
             value={item[commentKey]}
             onSelect={(phrase) => onChange({ [commentKey]: phrase } as Partial<ItemState>)}
           />
@@ -1535,19 +1540,36 @@ function PassFailPanel({
 
 function PhraseChips({
   category,
+  areaName,
   value,
   onSelect,
 }: {
   category: ItemCategory;
+  areaName: string;
   value: string;
   onSelect: (phrase: string) => void;
 }) {
   const phrases = category === 'cleaning' ? CLEANING_PHRASES : MAINTENANCE_PHRASES;
   const query = value.trim().toLowerCase();
-  // Empty comment: show a starter set. Typing: filter down to matches anywhere in
-  // the phrase (not just the start), so "paint" surfaces both "Cracked paint" and
-  // "Patch paint required".
-  const matches = query ? phrases.filter((p) => p.toLowerCase().includes(query)) : phrases.slice(0, 6);
+  const zoneName = areaName.toLowerCase();
+
+  const isRelevant = (p: Phrase) =>
+    !p.keywords || p.keywords.some((kw) => zoneName.includes(kw.toLowerCase()));
+
+  const relevant = phrases.filter(isRelevant);
+
+  let matches: Phrase[];
+  if (!query) {
+    // Empty comment: show a starter set scoped to this zone (universal phrases +
+    // anything keyword-matched to the zone name), so e.g. "Leaking tap" doesn't
+    // show up for a carpark.
+    matches = relevant.slice(0, 6);
+  } else {
+    // Typing: search the zone-relevant set first; only fall back to the full list
+    // if nothing relevant matches, so a genuine edge case is still findable.
+    const inRelevant = relevant.filter((p) => p.text.toLowerCase().includes(query));
+    matches = inRelevant.length > 0 ? inRelevant : phrases.filter((p) => p.text.toLowerCase().includes(query));
+  }
 
   if (matches.length === 0) return null;
 
@@ -1555,12 +1577,12 @@ function PhraseChips({
     <div className="flex flex-wrap gap-1.5">
       {matches.map((phrase) => (
         <button
-          key={phrase}
+          key={phrase.text}
           type="button"
-          onClick={() => onSelect(phrase)}
+          onClick={() => onSelect(phrase.text)}
           className="text-[11px] text-rsl-navy/60 bg-rsl-navy/5 hover:bg-rsl-navy/10 rounded-full px-2.5 py-1"
         >
-          {phrase}
+          {phrase.text}
         </button>
       ))}
     </div>
