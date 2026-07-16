@@ -1547,44 +1547,53 @@ function PhraseChips({
   category: ItemCategory;
   areaName: string;
   value: string;
-  onSelect: (phrase: string) => void;
+  onSelect: (nextValue: string) => void;
 }) {
   const phrases = category === 'cleaning' ? CLEANING_PHRASES : MAINTENANCE_PHRASES;
-  const query = value.trim().toLowerCase();
   const zoneName = areaName.toLowerCase();
 
   const isRelevant = (p: Phrase) =>
     !p.keywords || p.keywords.some((kw) => zoneName.includes(kw.toLowerCase()));
 
+  // Always shown in full, scoped to this zone — NOT filtered down by what's
+  // already typed. Filtering by the comment text was the bug: selecting one chip
+  // made the comment itself the filter query, which wiped out every other chip.
   const relevant = phrases.filter(isRelevant);
 
-  let matches: Phrase[];
-  if (!query) {
-    // Empty comment: show a starter set scoped to this zone (universal phrases +
-    // anything keyword-matched to the zone name), so e.g. "Leaking tap" doesn't
-    // show up for a carpark.
-    matches = relevant.slice(0, 6);
-  } else {
-    // Typing: search the zone-relevant set first; only fall back to the full list
-    // if nothing relevant matches, so a genuine edge case is still findable.
-    const inRelevant = relevant.filter((p) => p.text.toLowerCase().includes(query));
-    matches = inRelevant.length > 0 ? inRelevant : phrases.filter((p) => p.text.toLowerCase().includes(query));
+  // A chip is "selected" if its exact text is already one of the comma-separated
+  // segments in the comment, so multiple chips can be built up together and each
+  // stays tappable to remove just that one.
+  const segments = value
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
+
+  function toggle(phrase: Phrase) {
+    const already = segments.includes(phrase.text);
+    const nextSegments = already ? segments.filter((s) => s !== phrase.text) : [...segments, phrase.text];
+    onSelect(nextSegments.join(', '));
   }
 
-  if (matches.length === 0) return null;
+  if (relevant.length === 0) return null;
 
   return (
     <div className="flex flex-wrap gap-1.5">
-      {matches.map((phrase) => (
-        <button
-          key={phrase.text}
-          type="button"
-          onClick={() => onSelect(phrase.text)}
-          className="text-[11px] text-rsl-navy/60 bg-rsl-navy/5 hover:bg-rsl-navy/10 rounded-full px-2.5 py-1"
-        >
-          {phrase.text}
-        </button>
-      ))}
+      {relevant.map((phrase) => {
+        const selected = segments.includes(phrase.text);
+        return (
+          <button
+            key={phrase.text}
+            type="button"
+            onClick={() => toggle(phrase)}
+            className={`text-[11px] rounded-full px-2.5 py-1 transition-colors ${
+              selected ? 'bg-rsl-navy text-white' : 'text-rsl-navy/60 bg-rsl-navy/5 hover:bg-rsl-navy/10'
+            }`}
+          >
+            {selected ? '✓ ' : ''}
+            {phrase.text}
+          </button>
+        );
+      })}
     </div>
   );
 }
