@@ -376,6 +376,55 @@ export default function HealthInspector({
     return { done, total: category.items.length };
   }
 
+  function categoryPct(categoryId: string): number {
+    const category = categories.find((c) => c.id === categoryId);
+    if (!category) return 0;
+    const { done, total } = categoryAssessedCount(category);
+    if (total === 0) return 0;
+    return Math.round((done / total) * 100);
+  }
+
+  // Mirrors Stage 1's floorStatus — 'needs-attention' surfaces if any assessed
+  // item in the category trips computeRequiresAttention (poor/critical condition,
+  // or 0-2 years life expectancy), 'done' once every item's assessed and none do.
+  function categoryStatus(categoryId: string): 'not-started' | 'needs-attention' | 'done' {
+    const category = categories.find((c) => c.id === categoryId);
+    if (!category) return 'not-started';
+    const items = category.items.map((it) => itemState[it.id]);
+    const anyAttention = items.some((it) => it && computeRequiresAttention(it.condition, it.lifeExpectancy));
+    const { done, total } = categoryAssessedCount(category);
+    if (anyAttention) return 'needs-attention';
+    if (total > 0 && done === total) return 'done';
+    return 'not-started';
+  }
+
+  function isCategoryComplete(categoryId: string): boolean {
+    const category = categories.find((c) => c.id === categoryId);
+    if (!category) return false;
+    const { done, total } = categoryAssessedCount(category);
+    return total > 0 && done === total;
+  }
+
+  // Next incomplete category after the current one, wrapping around to the
+  // start — same pattern as Stage 1's nextIncompleteFloorId.
+  function nextIncompleteCategoryId(): string | null {
+    const currentIndex = categories.findIndex((c) => c.id === activeCategoryId);
+    for (let i = currentIndex + 1; i < categories.length; i++) {
+      if (!isCategoryComplete(categories[i].id)) return categories[i].id;
+    }
+    for (let i = 0; i < currentIndex; i++) {
+      if (!isCategoryComplete(categories[i].id)) return categories[i].id;
+    }
+    return null;
+  }
+
+  function goToNextCategory() {
+    const nextId = nextIncompleteCategoryId();
+    if (!nextId) return;
+    setActiveCategoryId(nextId);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
   if (loading) {
     return <div className="max-w-3xl mx-auto px-6 py-16 text-center text-rsl-navy/50 text-sm">Loading…</div>;
   }
@@ -417,7 +466,8 @@ export default function HealthInspector({
       {/* Category tabs */}
       <div className="flex gap-2 overflow-x-auto pb-2 -mx-1 px-1">
         {categories.map((c) => {
-          const { done, total } = categoryAssessedCount(c);
+          const status = categoryStatus(c.id);
+          const percent = categoryPct(c.id);
           return (
             <button
               key={c.id}
@@ -425,14 +475,16 @@ export default function HealthInspector({
               className={`shrink-0 text-xs font-semibold px-3 py-1.5 rounded-full border transition-colors ${
                 activeCategoryId === c.id
                   ? 'border-rsl-blue bg-rsl-blue text-white'
-                  : done === total && total > 0
+                  : status === 'needs-attention'
+                  ? 'border-rsl-red/40 text-rsl-red bg-rsl-red/5'
+                  : status === 'done'
                   ? 'border-pass/40 text-pass bg-pass/5'
                   : 'border-rsl-navy/15 text-rsl-navy/60'
               }`}
             >
               {c.name}
               <span className={`ml-1.5 ${activeCategoryId === c.id ? 'text-white/60' : 'opacity-60'}`}>
-                {done}/{total}
+                {percent}%
               </span>
             </button>
           );
@@ -456,9 +508,52 @@ export default function HealthInspector({
               photoError={photoUploadState[item.id]?.error ?? null}
             />
           ))}
+
+          <NextCategoryPrompt
+            nextCategoryName={categories.find((c) => c.id === nextIncompleteCategoryId())?.name ?? null}
+            allComplete={pct === 100}
+            onNext={goToNextCategory}
+          />
         </div>
       )}
     </div>
+  );
+}
+
+// Mirrors Stage 1's NextFloorPrompt. The View Summary button is deliberately
+// omitted here — the SOHC summary screen is a separate roadmap item (Bible
+// Section 8.1, #2) and isn't built yet; the top-of-page "Completed" badge
+// already communicates the finished state in the meantime.
+function NextCategoryPrompt({
+  nextCategoryName,
+  allComplete,
+  onNext,
+}: {
+  nextCategoryName: string | null;
+  allComplete: boolean;
+  onNext: () => void;
+}) {
+  if (allComplete) {
+    return (
+      <div className="rounded-2xl border border-pass/30 bg-pass/5 p-4 text-center">
+        <p className="text-sm font-semibold text-pass">
+          All categories complete — inspection ready to submit.
+        </p>
+      </div>
+    );
+  }
+
+  if (!nextCategoryName) {
+    return null; // nothing incomplete elsewhere — stay put and finish this category
+  }
+
+  return (
+    <button
+      onClick={onNext}
+      className="w-full text-sm font-semibold text-white bg-rsl-navy rounded-xl py-3.5 hover:bg-rsl-navy/90 transition-colors"
+    >
+      Next Category: {nextCategoryName} →
+    </button>
   );
 }
 
