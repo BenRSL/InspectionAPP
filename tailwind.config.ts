@@ -14,6 +14,13 @@ const config: Config = {
         },
         pass: '#2F8F4E',
         fail: '#C01820',
+        // SOHC condition rating scale — good reuses `pass`, critical reuses `fail`/`rsl.red`
+        condition: {
+          good: '#2F8F4E',
+          fair: '#E8A020',
+          poor: '#E8720A',
+          critical: '#C01820',
+        },
       },
       fontFamily: {
         display: ['var(--font-display)', 'sans-serif'],
