@@ -30,17 +30,47 @@ export default function HealthInspector({
   categories,
   inspectorId,
   canClearInspections,
+  sohcOnboardingRemaining,
 }: {
   siteDbId: string;
   siteName: string;
   categories: HealthCategory[];
   inspectorId: string;
   canClearInspections: boolean;
+  sohcOnboardingRemaining: number;
 }) {
   const supabase = useMemo(() => supabaseBrowser(), []);
 
   const [activeCategoryId, setActiveCategoryId] = useState(categories[0]?.id ?? '');
   const [view, setView] = useState<'category' | 'summary'>('category');
+
+  // Local mutable copy of the site's category/item structure — cloned once from
+  // the `categories` prop. Renaming, adding, deleting, and reordering categories
+  // and items all operate on this state and write through to Supabase, rather
+  // than mutating the prop. Direct port of Stage 1's `floors` state pattern.
+  const [categoriesState, setCategoriesState] = useState<HealthCategory[]>(() => structuredClone(categories));
+
+  // Categories and item labels are only editable during a site's first 3 SOHC
+  // inspections — matches sohc_onboarding_inspections_remaining, which the
+  // completion effect below decrements. Once it hits 0, editing locks to Admin-only.
+  const canEditStructure = sohcOnboardingRemaining > 0;
+
+  const [structureError, setStructureError] = useState<string | null>(null);
+  const [structureBusy, setStructureBusy] = useState(false);
+
+  const [editingCategoryId, setEditingCategoryId] = useState<string | null>(null);
+  const [editingCategoryName, setEditingCategoryName] = useState('');
+  const [addingCategory, setAddingCategory] = useState(false);
+  const [newCategoryName, setNewCategoryName] = useState('');
+
+  const [editingItemId, setEditingItemId] = useState<string | null>(null);
+  const [editingItemName, setEditingItemName] = useState('');
+  const [addingItemToCategory, setAddingItemToCategory] = useState<string | null>(null);
+  const [newItemName, setNewItemName] = useState('');
+
+  const [draggingItemId, setDraggingItemId] = useState<string | null>(null);
+  const dragCategoryId = useRef<string | null>(null);
+  const itemCardRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
   const [itemState, setItemState] = useState<Record<string, ItemState>>(() => {
     const init: Record<string, ItemState> = {};
@@ -146,14 +176,15 @@ export default function HealthInspector({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [siteDbId]);
 
-  const allItems = categories.flatMap((c) => c.items);
+  const allItems = categoriesState.flatMap((c) => c.items);
   const totalItems = allItems.length;
   // An item counts as "assessed" once both condition and life expectancy are set —
   // both columns are NOT NULL on health_inspection_items, so a row can't be saved
   // (and therefore can't count as done) until both are chosen.
-  const assessedItems = Object.values(itemState).filter(
-    (it) => it.condition !== null && it.lifeExpectancy !== null
-  ).length;
+  const assessedItems = allItems.filter((it) => {
+    const s = itemState[it.id];
+    return s && s.condition !== null && s.lifeExpectancy !== null;
+  }).length;
   const pct = totalItems ? Math.round((assessedItems / totalItems) * 100) : 0;
 
   // ---- Autosave: upsert one health_inspection_items row per item.
@@ -361,7 +392,7 @@ export default function HealthInspector({
 
       setItemState(() => {
         const init: Record<string, ItemState> = {};
-        categories.forEach((c) => c.items.forEach((it) => (init[it.id] = emptyItemState())));
+        categoriesState.forEach((c) => c.items.forEach((it) => (init[it.id] = emptyItemState())));
         return init;
       });
       setInspectionStatus('in_progress');
@@ -427,7 +458,267 @@ export default function HealthInspector({
     }
   }
 
-  const activeCategory = categories.find((c) => c.id === activeCategoryId);
+  // ---- Structure editing: rename/add/delete categories & items, plus
+  // pointer-events drag reorder of items within their category. All gated by
+  // canEditStructure (locks after the site's first 3 SOHC inspections) — a
+  // direct port of Stage 1's rename/add/delete-area pattern, adapted for
+  // SOHC's flatter category > item shape (no area-with-two-items nesting).
+  // Category-level drag reorder isn't included, same as Stage 1 doesn't let
+  // you drag-reorder floors — only the items within them.
+
+  function startEditCategory(category: HealthCategory) {
+    if (!canEditStructure) return;
+    setEditingCategoryId(category.id);
+    setEditingCategoryName(category.name);
+  }
+
+  async function saveCategoryName(categoryId: string) {
+    const trimmed = editingCategoryName.trim();
+    setEditingCategoryId(null);
+    if (!trimmed) return;
+
+    setCategoriesState((prev) => prev.map((c) => (c.id === categoryId ? { ...c, name: trimmed } : c)));
+
+    const { error } = await supabase
+      .from('health_categories')
+      .update({ category_name: trimmed })
+      .eq('id', categoryId);
+    if (error) setStructureError(`Couldn't rename that category: ${error.message}`);
+  }
+
+  async function addCategory() {
+    const trimmed = newCategoryName.trim();
+    if (!trimmed) return;
+
+    setStructureBusy(true);
+    setStructureError(null);
+
+    const { data: categoryRow, error } = await supabase
+      .from('health_categories')
+      .insert({ site_id: siteDbId, category_name: trimmed, sort_order: 999999 })
+      .select('id')
+      .single();
+
+    if (error || !categoryRow) {
+      setStructureBusy(false);
+      setStructureError(`Couldn't add "${trimmed}": ${error?.message ?? 'unknown error'}`);
+      return;
+    }
+
+    const newCategory: HealthCategory = { id: categoryRow.id, name: trimmed, items: [] };
+    const nextCategories = [...categoriesState, newCategory];
+    setCategoriesState(nextCategories);
+    setActiveCategoryId(newCategory.id);
+    setAddingCategory(false);
+    setNewCategoryName('');
+    await persistCategoryOrder(nextCategories);
+    setStructureBusy(false);
+  }
+
+  async function deleteCategoryHandler(category: HealthCategory) {
+    if (
+      !window.confirm(
+        `Remove "${category.name}"? This deletes its items and any saved answers for them, across every SOHC inspection at this site. This can't be undone.`
+      )
+    )
+      return;
+
+    setStructureBusy(true);
+    setStructureError(null);
+
+    // Explicit cleanup rather than relying on an assumed cascade — deletes any
+    // saved answers for this category's items first, then the items, then the
+    // category itself.
+    const itemIds = category.items.map((it) => it.id);
+    if (itemIds.length > 0) {
+      await supabase.from('health_inspection_items').delete().in('health_item_id', itemIds);
+    }
+    const { error } = await supabase.from('health_categories').delete().eq('id', category.id);
+    if (error) {
+      setStructureBusy(false);
+      setStructureError(`Couldn't remove "${category.name}": ${error.message}`);
+      return;
+    }
+
+    const remaining = categoriesState.filter((c) => c.id !== category.id);
+    setCategoriesState(remaining);
+    if (activeCategoryId === category.id) {
+      setActiveCategoryId(remaining[0]?.id ?? '');
+    }
+    setItemState((prev) => {
+      const next = { ...prev };
+      itemIds.forEach((id) => delete next[id]);
+      return next;
+    });
+    setStructureBusy(false);
+  }
+
+  function startEditItem(item: { id: string; name: string }) {
+    if (!canEditStructure) return;
+    setEditingItemId(item.id);
+    setEditingItemName(item.name);
+  }
+
+  async function saveItemName(itemId: string) {
+    const trimmed = editingItemName.trim();
+    setEditingItemId(null);
+    if (!trimmed) return;
+
+    setCategoriesState((prev) =>
+      prev.map((c) => ({
+        ...c,
+        items: c.items.map((it) => (it.id === itemId ? { ...it, name: trimmed } : it)),
+      }))
+    );
+
+    const { error } = await supabase.from('health_items').update({ item_name: trimmed }).eq('id', itemId);
+    if (error) setStructureError(`Couldn't rename that item: ${error.message}`);
+  }
+
+  async function addItemToCategory(categoryId: string) {
+    const trimmed = newItemName.trim();
+    if (!trimmed) return;
+    const category = categoriesState.find((c) => c.id === categoryId);
+    if (!category) return;
+
+    setStructureBusy(true);
+    setStructureError(null);
+
+    const { data: itemRow, error } = await supabase
+      .from('health_items')
+      .insert({ category_id: categoryId, item_name: trimmed, sort_order: 999999 })
+      .select('id')
+      .single();
+
+    if (error || !itemRow) {
+      setStructureBusy(false);
+      setStructureError(`Couldn't add "${trimmed}": ${error?.message ?? 'unknown error'}`);
+      return;
+    }
+
+    const newItem = { id: itemRow.id, name: trimmed };
+    const nextCategories = categoriesState.map((c) =>
+      c.id === categoryId ? { ...c, items: [...c.items, newItem] } : c
+    );
+    setCategoriesState(nextCategories);
+    setItemState((prev) => ({ ...prev, [newItem.id]: emptyItemState() }));
+    setAddingItemToCategory(null);
+    setNewItemName('');
+    await persistItemOrder(nextCategories);
+    setStructureBusy(false);
+  }
+
+  async function deleteItemHandler(categoryId: string, item: { id: string; name: string }) {
+    if (
+      !window.confirm(
+        `Remove "${item.name}"? This deletes any saved answers for it, across every SOHC inspection at this site. This can't be undone.`
+      )
+    )
+      return;
+
+    setStructureBusy(true);
+    setStructureError(null);
+
+    await supabase.from('health_inspection_items').delete().eq('health_item_id', item.id);
+    const { error } = await supabase.from('health_items').delete().eq('id', item.id);
+    if (error) {
+      setStructureBusy(false);
+      setStructureError(`Couldn't remove "${item.name}": ${error.message}`);
+      return;
+    }
+
+    setCategoriesState((prev) =>
+      prev.map((c) => (c.id === categoryId ? { ...c, items: c.items.filter((it) => it.id !== item.id) } : c))
+    );
+    setItemState((prev) => {
+      const next = { ...prev };
+      delete next[item.id];
+      return next;
+    });
+    setStructureBusy(false);
+  }
+
+  // Renumbers every category across the site sequentially (0, 1, 2, …) —
+  // same full-renumber reasoning as Stage 1's persistOrder.
+  async function persistCategoryOrder(orderedCategories: HealthCategory[]) {
+    setSaveStatus('saving');
+    const results = await Promise.all(
+      orderedCategories.map((c, index) =>
+        supabase.from('health_categories').update({ sort_order: index }).eq('id', c.id)
+      )
+    );
+    setSaveStatus(results.some((r) => r.error) ? 'error' : 'saved');
+  }
+
+  // Renumbers every item across the whole site sequentially, mirroring Stage 1's
+  // area persistOrder — a full renumber avoids sort_order collisions between
+  // categories, not just within the one being reordered.
+  async function persistItemOrder(orderedCategories: HealthCategory[]) {
+    const orderedIds = orderedCategories.flatMap((c) => c.items.map((it) => it.id));
+    setSaveStatus('saving');
+    const results = await Promise.all(
+      orderedIds.map((id, index) => supabase.from('health_items').update({ sort_order: index }).eq('id', id))
+    );
+    setSaveStatus(results.some((r) => r.error) ? 'error' : 'saved');
+  }
+
+  function startDragItem(categoryId: string, itemId: string) {
+    if (!canEditStructure) return;
+    dragCategoryId.current = categoryId;
+    setDraggingItemId(itemId);
+  }
+
+  useEffect(() => {
+    if (!draggingItemId || !dragCategoryId.current) return;
+    const categoryId = dragCategoryId.current;
+
+    function onPointerMove(e: PointerEvent) {
+      setCategoriesState((prev) => {
+        const category = prev.find((c) => c.id === categoryId);
+        if (!category) return prev;
+        const draggedIndex = category.items.findIndex((it) => it.id === draggingItemId);
+        if (draggedIndex === -1) return prev;
+
+        let overIndex = category.items.length - 1;
+        for (let i = 0; i < category.items.length; i++) {
+          const el = itemCardRefs.current[category.items[i].id];
+          if (!el) continue;
+          const rect = el.getBoundingClientRect();
+          const mid = rect.top + rect.height / 2;
+          if (e.clientY < mid) {
+            overIndex = i;
+            break;
+          }
+        }
+
+        if (overIndex === draggedIndex) return prev;
+
+        const nextItems = [...category.items];
+        const [moved] = nextItems.splice(draggedIndex, 1);
+        nextItems.splice(overIndex, 0, moved);
+        return prev.map((c) => (c.id === categoryId ? { ...c, items: nextItems } : c));
+      });
+    }
+
+    function onPointerUp() {
+      setDraggingItemId(null);
+      dragCategoryId.current = null;
+      setCategoriesState((current) => {
+        persistItemOrder(current);
+        return current;
+      });
+    }
+
+    window.addEventListener('pointermove', onPointerMove);
+    window.addEventListener('pointerup', onPointerUp);
+    return () => {
+      window.removeEventListener('pointermove', onPointerMove);
+      window.removeEventListener('pointerup', onPointerUp);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draggingItemId]);
+
+  const activeCategory = categoriesState.find((c) => c.id === activeCategoryId);
 
   function categoryAssessedCount(category: HealthCategory): { done: number; total: number } {
     const items = category.items.map((it) => itemState[it.id]);
@@ -436,7 +727,7 @@ export default function HealthInspector({
   }
 
   function categoryPct(categoryId: string): number {
-    const category = categories.find((c) => c.id === categoryId);
+    const category = categoriesState.find((c) => c.id === categoryId);
     if (!category) return 0;
     const { done, total } = categoryAssessedCount(category);
     if (total === 0) return 0;
@@ -447,7 +738,7 @@ export default function HealthInspector({
   // item in the category trips computeRequiresAttention (poor/critical condition,
   // or 0-2 years life expectancy), 'done' once every item's assessed and none do.
   function categoryStatus(categoryId: string): 'not-started' | 'needs-attention' | 'done' {
-    const category = categories.find((c) => c.id === categoryId);
+    const category = categoriesState.find((c) => c.id === categoryId);
     if (!category) return 'not-started';
     const items = category.items.map((it) => itemState[it.id]);
     const anyAttention = items.some((it) => it && computeRequiresAttention(it.condition, it.lifeExpectancy));
@@ -458,7 +749,7 @@ export default function HealthInspector({
   }
 
   function isCategoryComplete(categoryId: string): boolean {
-    const category = categories.find((c) => c.id === categoryId);
+    const category = categoriesState.find((c) => c.id === categoryId);
     if (!category) return false;
     const { done, total } = categoryAssessedCount(category);
     return total > 0 && done === total;
@@ -467,12 +758,12 @@ export default function HealthInspector({
   // Next incomplete category after the current one, wrapping around to the
   // start — same pattern as Stage 1's nextIncompleteFloorId.
   function nextIncompleteCategoryId(): string | null {
-    const currentIndex = categories.findIndex((c) => c.id === activeCategoryId);
-    for (let i = currentIndex + 1; i < categories.length; i++) {
-      if (!isCategoryComplete(categories[i].id)) return categories[i].id;
+    const currentIndex = categoriesState.findIndex((c) => c.id === activeCategoryId);
+    for (let i = currentIndex + 1; i < categoriesState.length; i++) {
+      if (!isCategoryComplete(categoriesState[i].id)) return categoriesState[i].id;
     }
     for (let i = 0; i < currentIndex; i++) {
-      if (!isCategoryComplete(categories[i].id)) return categories[i].id;
+      if (!isCategoryComplete(categoriesState[i].id)) return categoriesState[i].id;
     }
     return null;
   }
@@ -486,7 +777,7 @@ export default function HealthInspector({
 
   // ---- Summary view data — condition breakdown by category, and the flagged
   // (still-editable) item list, same shape as Stage 1's floorStats/failedAreas ----
-  const categoryStats = categories.map((c) => {
+  const categoryStats = categoriesState.map((c) => {
     let good = 0;
     let fair = 0;
     let poor = 0;
@@ -506,7 +797,7 @@ export default function HealthInspector({
   const totalPoor = categoryStats.reduce((sum, s) => sum + s.poor, 0);
   const totalCritical = categoryStats.reduce((sum, s) => sum + s.critical, 0);
 
-  const flaggedItems = categories.flatMap((c) =>
+  const flaggedItems = categoriesState.flatMap((c) =>
     c.items
       .filter((it) => {
         const s = itemState[it.id];
@@ -582,7 +873,7 @@ export default function HealthInspector({
       {/* Category tabs */}
       {view === 'category' && (
         <div className="flex gap-2 overflow-x-auto pb-2 -mx-1 px-1 mt-4">
-          {categories.map((c) => {
+          {categoriesState.map((c) => {
             const status = categoryStatus(c.id);
             const percent = categoryPct(c.id);
             return (
@@ -609,26 +900,183 @@ export default function HealthInspector({
         </div>
       )}
 
+      {view === 'category' && canEditStructure && (
+        <div className="mt-2">
+          {addingCategory ? (
+            <div className="flex gap-2">
+              <input
+                autoFocus
+                value={newCategoryName}
+                onChange={(e) => setNewCategoryName(e.target.value)}
+                placeholder="New category name"
+                className="flex-1 text-sm rounded-lg border border-rsl-navy/15 px-3 py-2"
+              />
+              <button
+                onClick={addCategory}
+                disabled={structureBusy || !newCategoryName.trim()}
+                className="text-sm font-semibold text-white bg-rsl-navy rounded-lg px-4 disabled:opacity-40"
+              >
+                {structureBusy ? 'Saving…' : 'Add'}
+              </button>
+              <button
+                onClick={() => {
+                  setAddingCategory(false);
+                  setNewCategoryName('');
+                }}
+                className="text-sm font-semibold text-rsl-navy/50 px-2"
+              >
+                Cancel
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={() => setAddingCategory(true)}
+              className="text-sm font-semibold text-rsl-blue hover:underline"
+            >
+              + Add category
+            </button>
+          )}
+        </div>
+      )}
+
+      {structureError && (
+        <div className="mt-3 rounded-xl bg-rsl-red/5 border border-rsl-red/20 p-3 text-sm text-rsl-red flex items-start justify-between gap-3">
+          <span>{structureError}</span>
+          <button onClick={() => setStructureError(null)} className="text-rsl-red/60 shrink-0">
+            ✕
+          </button>
+        </div>
+      )}
+
       {/* Active category items */}
       {view === 'category' && activeCategory && (
         <div className="mt-5 space-y-3">
-          <h2 className="font-display font-bold text-rsl-navy">{activeCategory.name}</h2>
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2 min-w-0">
+              {editingCategoryId === activeCategory.id ? (
+                <div className="flex items-center gap-1.5 min-w-0">
+                  <input
+                    autoFocus
+                    value={editingCategoryName}
+                    onChange={(e) => setEditingCategoryName(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') saveCategoryName(activeCategory.id);
+                      if (e.key === 'Escape') setEditingCategoryId(null);
+                    }}
+                    className="text-sm font-semibold text-rsl-navy rounded-lg border border-rsl-navy/20 px-2 py-1 min-w-0"
+                  />
+                  <button
+                    onClick={() => saveCategoryName(activeCategory.id)}
+                    className="text-pass text-xs font-semibold shrink-0"
+                  >
+                    Save
+                  </button>
+                  <button
+                    onClick={() => setEditingCategoryId(null)}
+                    className="text-rsl-navy/40 text-xs font-semibold shrink-0"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              ) : (
+                <h2 className="font-display font-bold text-rsl-navy truncate">{activeCategory.name}</h2>
+              )}
+              {canEditStructure && editingCategoryId !== activeCategory.id && (
+                <button
+                  onClick={() => startEditCategory(activeCategory)}
+                  className="shrink-0 text-rsl-navy/30 hover:text-rsl-navy/60 text-xs"
+                  aria-label="Rename category"
+                >
+                  ✎
+                </button>
+              )}
+              {canEditStructure && (
+                <span className="shrink-0 text-[10px] font-semibold uppercase tracking-wide text-rsl-gold bg-rsl-gold/10 rounded-full px-2 py-0.5">
+                  Editable · first 3 inspections
+                </span>
+              )}
+            </div>
+            {canEditStructure && (
+              <button
+                onClick={() => deleteCategoryHandler(activeCategory)}
+                disabled={structureBusy}
+                className="shrink-0 text-rsl-navy/30 hover:text-rsl-red text-xs disabled:opacity-40"
+                aria-label="Remove category"
+              >
+                🗑
+              </button>
+            )}
+          </div>
+
           {activeCategory.items.map((item) => (
-            <HealthItemCard
+            <div
               key={item.id}
-              itemName={item.name}
-              state={itemState[item.id]}
-              onChange={(patch) => setItem(item.id, patch)}
-              onUploadPhoto={(file) => uploadPhoto(item.id, file)}
-              onRemovePhoto={(path) => removePhoto(item.id, path)}
-              resolvePhotoUrl={resolvePhotoUrl}
-              photoBusy={photoUploadState[item.id]?.busy ?? false}
-              photoError={photoUploadState[item.id]?.error ?? null}
-            />
+              ref={(el) => {
+                itemCardRefs.current[item.id] = el;
+              }}
+            >
+              <HealthItemCard
+                itemName={item.name}
+                state={itemState[item.id]}
+                onChange={(patch) => setItem(item.id, patch)}
+                onUploadPhoto={(file) => uploadPhoto(item.id, file)}
+                onRemovePhoto={(path) => removePhoto(item.id, path)}
+                resolvePhotoUrl={resolvePhotoUrl}
+                photoBusy={photoUploadState[item.id]?.busy ?? false}
+                photoError={photoUploadState[item.id]?.error ?? null}
+                editable={canEditStructure}
+                isEditingName={editingItemId === item.id}
+                editingName={editingItemName}
+                onStartEditName={() => startEditItem(item)}
+                onEditNameChange={setEditingItemName}
+                onSaveName={() => saveItemName(item.id)}
+                onCancelEditName={() => setEditingItemId(null)}
+                onDelete={() => deleteItemHandler(activeCategory.id, item)}
+                deleteBusy={structureBusy}
+                isDragging={draggingItemId === item.id}
+                onDragHandlePointerDown={() => startDragItem(activeCategory.id, item.id)}
+              />
+            </div>
           ))}
 
+          {canEditStructure &&
+            (addingItemToCategory === activeCategory.id ? (
+              <div className="flex gap-2">
+                <input
+                  autoFocus
+                  value={newItemName}
+                  onChange={(e) => setNewItemName(e.target.value)}
+                  placeholder="New item name"
+                  className="flex-1 text-sm rounded-lg border border-rsl-navy/15 px-3 py-2"
+                />
+                <button
+                  onClick={() => addItemToCategory(activeCategory.id)}
+                  disabled={structureBusy || !newItemName.trim()}
+                  className="text-sm font-semibold text-white bg-rsl-navy rounded-lg px-4 disabled:opacity-40"
+                >
+                  {structureBusy ? 'Saving…' : 'Add'}
+                </button>
+                <button
+                  onClick={() => {
+                    setAddingItemToCategory(null);
+                    setNewItemName('');
+                  }}
+                  className="text-sm font-semibold text-rsl-navy/50 px-2"
+                >
+                  Cancel
+                </button>
+              </div>
+            ) : (
+              <button
+                onClick={() => setAddingItemToCategory(activeCategory.id)}
+                className="text-sm font-semibold text-rsl-blue hover:underline"
+              >
+                + Add item to this category
+              </button>
+            ))}
+
           <NextCategoryPrompt
-            nextCategoryName={categories.find((c) => c.id === nextIncompleteCategoryId())?.name ?? null}
+            nextCategoryName={categoriesState.find((c) => c.id === nextIncompleteCategoryId())?.name ?? null}
             allComplete={pct === 100}
             onNext={goToNextCategory}
           />
@@ -644,7 +1092,8 @@ export default function HealthInspector({
               {totalGood} good · {totalFair} fair · {totalPoor} poor · {totalCritical} critical
             </p>
             <p className="text-xs text-rsl-navy/50 mt-1">
-              {totalItems} assets across {categories.length} categor{categories.length !== 1 ? 'ies' : 'y'}
+              {totalItems} assets across {categoriesState.length} categor
+              {categoriesState.length !== 1 ? 'ies' : 'y'}
             </p>
           </div>
 
@@ -798,6 +1247,17 @@ function HealthItemCard({
   resolvePhotoUrl,
   photoBusy,
   photoError,
+  editable = false,
+  isEditingName = false,
+  editingName = '',
+  onStartEditName,
+  onEditNameChange,
+  onSaveName,
+  onCancelEditName,
+  onDelete,
+  deleteBusy = false,
+  isDragging = false,
+  onDragHandlePointerDown,
 }: {
   itemName: string;
   state: ItemState;
@@ -807,6 +1267,17 @@ function HealthItemCard({
   resolvePhotoUrl: (path: string) => string;
   photoBusy: boolean;
   photoError: string | null;
+  editable?: boolean;
+  isEditingName?: boolean;
+  editingName?: string;
+  onStartEditName?: () => void;
+  onEditNameChange?: (v: string) => void;
+  onSaveName?: () => void;
+  onCancelEditName?: () => void;
+  onDelete?: () => void;
+  deleteBusy?: boolean;
+  isDragging?: boolean;
+  onDragHandlePointerDown?: () => void;
 }) {
   const selectId = useId();
   // Photo upload only appears once condition is Fair or worse — matches the
@@ -814,8 +1285,72 @@ function HealthItemCard({
   const showPhoto = state.condition !== null && state.condition !== 'good';
 
   return (
-    <div className="rounded-xl border border-rsl-navy/10 p-4 space-y-3">
-      <p className="font-semibold text-sm text-rsl-navy">{itemName}</p>
+    <div
+      className={`rounded-xl border p-4 space-y-3 transition-colors ${
+        isDragging ? 'opacity-50 ring-2 ring-rsl-navy border-rsl-navy/10' : 'border-rsl-navy/10'
+      }`}
+    >
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-1.5 min-w-0">
+          {editable && onDragHandlePointerDown && (
+            <button
+              onPointerDown={(e) => {
+                e.preventDefault();
+                onDragHandlePointerDown();
+              }}
+              style={{ touchAction: 'none' }}
+              className="shrink-0 text-rsl-navy/30 hover:text-rsl-navy/60 cursor-grab active:cursor-grabbing px-1"
+              aria-label="Drag to reorder"
+            >
+              ⠿
+            </button>
+          )}
+
+          {isEditingName ? (
+            <div className="flex items-center gap-1.5 min-w-0">
+              <input
+                autoFocus
+                value={editingName}
+                onChange={(e) => onEditNameChange?.(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') onSaveName?.();
+                  if (e.key === 'Escape') onCancelEditName?.();
+                }}
+                className="text-sm font-semibold text-rsl-navy rounded-lg border border-rsl-navy/20 px-2 py-1 min-w-0"
+              />
+              <button onClick={onSaveName} className="text-pass text-xs font-semibold shrink-0">
+                Save
+              </button>
+              <button onClick={onCancelEditName} className="text-rsl-navy/40 text-xs font-semibold shrink-0">
+                Cancel
+              </button>
+            </div>
+          ) : (
+            <p className="font-semibold text-sm text-rsl-navy truncate">{itemName}</p>
+          )}
+
+          {editable && !isEditingName && (
+            <button
+              onClick={onStartEditName}
+              className="shrink-0 text-rsl-navy/30 hover:text-rsl-navy/60 text-xs"
+              aria-label="Rename item"
+            >
+              ✎
+            </button>
+          )}
+        </div>
+
+        {editable && onDelete && (
+          <button
+            onClick={onDelete}
+            disabled={deleteBusy}
+            className="shrink-0 text-rsl-navy/30 hover:text-rsl-red text-xs disabled:opacity-40"
+            aria-label="Remove item"
+          >
+            🗑
+          </button>
+        )}
+      </div>
 
       <div className="flex gap-1.5 flex-wrap">
         {CONDITION_OPTIONS.map((opt) => {
