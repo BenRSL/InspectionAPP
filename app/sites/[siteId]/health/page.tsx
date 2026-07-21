@@ -70,6 +70,7 @@ export default async function SiteHealthPage({ params }: { params: { siteId: str
       {hasData ? (
         <HealthInspector
           siteDbId={siteRow.id}
+          siteName={siteRow.name}
           categories={categories}
           inspectorId={user.id}
           canClearInspections={canClearInspections}
