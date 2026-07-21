@@ -3,7 +3,7 @@
 // health_categories / health_items, which are per-site tables (not shared config).
 
 export type HealthCondition = 'good' | 'fair' | 'poor' | 'critical';
-export type LifeExpectancyBand = '0_2' | '3_5' | '6_10' | '10_plus';
+export type LifeExpectancyBand = '0_2' | '3_5' | '6_10' | '10_plus' | 'na';
 
 export const CONDITION_OPTIONS: { value: HealthCondition; label: string }[] = [
   { value: 'good', label: 'Good' },
@@ -17,6 +17,7 @@ export const LIFE_EXPECTANCY_OPTIONS: { value: LifeExpectancyBand; label: string
   { value: '3_5', label: '3–5 years' },
   { value: '6_10', label: '6–10 years' },
   { value: '10_plus', label: '10+ years' },
+  { value: 'na', label: 'N/A' },
 ];
 
 export interface HealthItem {
@@ -31,7 +32,9 @@ export interface HealthCategory {
 }
 
 // requires_attention mirrors the WHERE clause in v_asset_lifecycle_flags exactly —
-// keep these two in sync if that view's logic ever changes.
+// keep these two in sync if that view's logic ever changes. 'na' (added for items
+// that don't have a meaningful remaining-life estimate) never matches the '0_2'
+// check below, so it can't trigger a false attention-flag — no view change needed.
 export function computeRequiresAttention(
   condition: HealthCondition | null,
   lifeExpectancy: LifeExpectancyBand | null
