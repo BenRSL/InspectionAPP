@@ -20,7 +20,7 @@ export default async function SiteHealthPage({ params }: { params: { siteId: str
   // params.siteId is the slug (e.g. 'anzac-house'), matching the site switcher links
   const { data: siteRow } = await supabase
     .from('sites')
-    .select('id, name, slug')
+    .select('id, name, slug, sohc_onboarding_inspections_remaining')
     .eq('slug', params.siteId)
     .single();
 
@@ -74,6 +74,7 @@ export default async function SiteHealthPage({ params }: { params: { siteId: str
           categories={categories}
           inspectorId={user.id}
           canClearInspections={canClearInspections}
+          sohcOnboardingRemaining={siteRow.sohc_onboarding_inspections_remaining ?? 0}
         />
       ) : (
         <div className="max-w-3xl mx-auto px-6 py-16 text-center">
