@@ -1392,22 +1392,25 @@ function HealthItemCard({
       </div>
 
       <div>
-        <label htmlFor={selectId} className="text-xs font-semibold text-rsl-navy/50 block mb-1">
+        <span id={selectId} className="text-xs font-semibold text-rsl-navy/50 block mb-1">
           Remaining life expectancy
-        </label>
-        <select
-          id={selectId}
-          value={state.lifeExpectancy ?? ''}
-          onChange={(e) => onChange({ lifeExpectancy: (e.target.value || null) as LifeExpectancyBand | null })}
-          className="w-full text-sm border border-rsl-navy/15 rounded-lg px-3 py-2 text-rsl-navy"
-        >
-          <option value="">Select…</option>
-          {LIFE_EXPECTANCY_OPTIONS.map((opt) => (
-            <option key={opt.value} value={opt.value}>
-              {opt.label}
-            </option>
-          ))}
-        </select>
+        </span>
+        <div role="group" aria-labelledby={selectId} className="flex gap-1.5 flex-wrap">
+          {LIFE_EXPECTANCY_OPTIONS.map((opt) => {
+            const selected = state.lifeExpectancy === opt.value;
+            return (
+              <button
+                key={opt.value}
+                onClick={() => onChange({ lifeExpectancy: opt.value })}
+                className={`text-xs font-semibold px-3 py-1.5 rounded-full border transition-colors ${
+                  selected ? 'border-rsl-navy bg-rsl-navy text-white' : 'border-rsl-navy/15 text-rsl-navy/60'
+                }`}
+              >
+                {opt.label}
+              </button>
+            );
+          })}
+        </div>
       </div>
 
       <textarea
