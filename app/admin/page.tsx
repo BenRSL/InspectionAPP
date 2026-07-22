@@ -5,8 +5,9 @@ import { useEffect, useMemo, useState } from 'react';
 import { supabaseBrowser } from '@/lib/supabase-browser';
 import InsightsTab from '@/components/InsightsTab';
 import ChipBankTab from '@/components/ChipBankTab';
+import AssetCostsTab from '@/components/AssetCostsTab';
 
-type Tab = 'sites' | 'areas' | 'users' | 'insights' | 'chips' | 'tutorial';
+type Tab = 'sites' | 'areas' | 'users' | 'insights' | 'chips' | 'costs' | 'tutorial';
 
 type SiteRow = {
   id: string;
@@ -128,6 +129,7 @@ export default function AdminPage() {
               ['users', 'Users'],
               ['insights', 'Insights'],
               ['chips', 'Chip Bank'],
+              ['costs', 'Asset Costs'],
               ['tutorial', 'Tutorial'],
             ] as [Tab, string][]
           ).map(([id, label]) => (
@@ -180,6 +182,7 @@ export default function AdminPage() {
               )}
               {tab === 'insights' && <InsightsTab />}
               {tab === 'chips' && <ChipBankTab />}
+              {tab === 'costs' && <AssetCostsTab />}
               {tab === 'tutorial' && <TutorialTab />}
             </>
           )}
