@@ -15,7 +15,8 @@
     "@supabase/supabase-js": "^2.45.0",
     "recharts": "^2.12.7",
     "@react-pdf/renderer": "^4.5.1",
-    "resend": "^6.17.2"
+    "resend": "^6.17.2",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "typescript": "^5.5.4",
