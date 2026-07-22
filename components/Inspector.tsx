@@ -3,7 +3,8 @@
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { supabaseBrowser } from '@/lib/supabase-browser';
 import type { Site, Floor, FloorArea, ItemCategory } from '@/lib/sites';
-import { type Phrase, MAX_PHRASES_PER_CATEGORY } from '@/lib/common-phrases';
+import { type Phrase, type ZoneTypeAssignment, MAX_PHRASES_PER_CATEGORY, buildZoneTypeIndex } from '@/lib/common-phrases';
+import PhraseChips from '@/components/PhraseChips';
 
 type PassState = boolean | null; // null = not yet assessed
 type SaveStatus = 'idle' | 'saving' | 'saved' | 'error';
@@ -90,6 +91,8 @@ export default function Inspector({
     cleaning: [],
     maintenance: [],
   });
+  const [zoneTypeAssignments, setZoneTypeAssignments] = useState<ZoneTypeAssignment[]>([]);
+  const zoneTypeIndex = useMemo(() => buildZoneTypeIndex(zoneTypeAssignments), [zoneTypeAssignments]);
 
   const [areaState, setAreaState] = useState<Record<string, AreaState>>(() => {
     const init: Record<string, AreaState> = {};
@@ -112,19 +115,24 @@ export default function Inspector({
   const commentTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
 
   // ---- Load the comment phrase library once on mount. Independent of the
-  // inspection load below — phrases aren't tied to a specific inspection. ----
+  // inspection load below — phrases aren't tied to a specific inspection.
+  // Also loads the curated zone-type assignments (comment_phrase_zone_types)
+  // that now decide chip relevance, replacing the old keyword-substring match. ----
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const { data } = await supabase
-        .from('comment_phrases')
-        .select('id, category, text, keywords')
-        .order('text');
-      if (!cancelled && data) {
+      const [phrasesRes, assignmentsRes] = await Promise.all([
+        supabase.from('comment_phrases').select('id, category, text, keywords').order('text'),
+        supabase.from('comment_phrase_zone_types').select('id, phrase_id, zone_type_name'),
+      ]);
+      if (!cancelled && phrasesRes.data) {
         setPhrases({
-          cleaning: data.filter((p) => p.category === 'cleaning'),
-          maintenance: data.filter((p) => p.category === 'maintenance'),
+          cleaning: phrasesRes.data.filter((p) => p.category === 'cleaning'),
+          maintenance: phrasesRes.data.filter((p) => p.category === 'maintenance'),
         });
+      }
+      if (!cancelled && assignmentsRes.data) {
+        setZoneTypeAssignments(assignmentsRes.data);
       }
     })();
     return () => {
@@ -1045,6 +1053,7 @@ export default function Inspector({
                 resolvePhotoUrl={resolvePhotoUrl}
                 photoUploadState={photoUploadState}
                 phrases={phrases}
+                zoneTypeIndex={zoneTypeIndex}
                 onAddPhrase={addPhrase}
                 onRenamePhrase={renamePhrase}
                 onDeletePhrase={deletePhrase}
@@ -1124,6 +1133,7 @@ export default function Inspector({
                 resolvePhotoUrl={resolvePhotoUrl}
                 photoUploadState={photoUploadState}
                 phrases={phrases}
+                zoneTypeIndex={zoneTypeIndex}
                 onAddPhrase={addPhrase}
                 onRenamePhrase={renamePhrase}
                 onDeletePhrase={deletePhrase}
@@ -1195,6 +1205,7 @@ export default function Inspector({
                       resolvePhotoUrl={resolvePhotoUrl}
                       photoUploadState={photoUploadState}
                       phrases={phrases}
+                      zoneTypeIndex={zoneTypeIndex}
                       onAddPhrase={addPhrase}
                       onRenamePhrase={renamePhrase}
                       onDeletePhrase={deletePhrase}
@@ -1314,6 +1325,7 @@ function AreaCard({
   resolvePhotoUrl,
   photoUploadState = {},
   phrases = { cleaning: [], maintenance: [] },
+  zoneTypeIndex,
   onAddPhrase,
   onRenamePhrase,
   onDeletePhrase,
@@ -1345,6 +1357,7 @@ function AreaCard({
   resolvePhotoUrl?: (path: string) => string;
   photoUploadState?: Record<string, { busy: boolean; error: string | null }>;
   phrases?: { cleaning: Phrase[]; maintenance: Phrase[] };
+  zoneTypeIndex: Map<string, Set<string>>;
   onAddPhrase?: (category: ItemCategory, text: string) => void;
   onRenamePhrase?: (category: ItemCategory, id: string, text: string) => void;
   onDeletePhrase?: (category: ItemCategory, id: string) => void;
@@ -1460,6 +1473,7 @@ function AreaCard({
             photoBusy={photoUploadState[cleaningItem.id]?.busy ?? false}
             photoError={photoUploadState[cleaningItem.id]?.error ?? null}
             phrases={phrases.cleaning}
+            zoneTypeIndex={zoneTypeIndex}
             onAddPhrase={onAddPhrase ? (text) => onAddPhrase('cleaning', text) : undefined}
             onRenamePhrase={onRenamePhrase ? (id, text) => onRenamePhrase('cleaning', id, text) : undefined}
             onDeletePhrase={onDeletePhrase ? (id) => onDeletePhrase('cleaning', id) : undefined}
@@ -1491,6 +1505,7 @@ function AreaCard({
             photoBusy={photoUploadState[maintenanceItem.id]?.busy ?? false}
             photoError={photoUploadState[maintenanceItem.id]?.error ?? null}
             phrases={phrases.maintenance}
+            zoneTypeIndex={zoneTypeIndex}
             onAddPhrase={onAddPhrase ? (text) => onAddPhrase('maintenance', text) : undefined}
             onRenamePhrase={onRenamePhrase ? (id, text) => onRenamePhrase('maintenance', id, text) : undefined}
             onDeletePhrase={onDeletePhrase ? (id) => onDeletePhrase('maintenance', id) : undefined}
@@ -1522,6 +1537,7 @@ function PassFailPanel({
   photoBusy = false,
   photoError = null,
   phrases = [],
+  zoneTypeIndex,
   onAddPhrase,
   onRenamePhrase,
   onDeletePhrase,
@@ -1546,6 +1562,7 @@ function PassFailPanel({
   photoBusy?: boolean;
   photoError?: string | null;
   phrases?: Phrase[];
+  zoneTypeIndex: Map<string, Set<string>>;
   onAddPhrase?: (text: string) => void;
   onRenamePhrase?: (id: string, text: string) => void;
   onDeletePhrase?: (id: string) => void;
@@ -1622,7 +1639,8 @@ function PassFailPanel({
           />
           <PhraseChips
             phrases={phrases}
-            areaName={areaName}
+            zoneTypeIndex={zoneTypeIndex}
+            zoneTypeName={areaName}
             value={item[commentKey]}
             onSelect={(phrase) => onChange({ [commentKey]: phrase } as Partial<ItemState>)}
             onAddPhrase={onAddPhrase}
@@ -1637,222 +1655,6 @@ function PassFailPanel({
             busy={photoBusy}
             error={photoError}
           />
-        </div>
-      )}
-    </div>
-  );
-}
-
-function PhraseChips({
-  phrases,
-  areaName,
-  value,
-  onSelect,
-  onAddPhrase,
-  onRenamePhrase,
-  onDeletePhrase,
-}: {
-  phrases: Phrase[];
-  areaName: string;
-  value: string;
-  onSelect: (nextValue: string) => void;
-  onAddPhrase?: (text: string) => void;
-  onRenamePhrase?: (id: string, text: string) => void;
-  onDeletePhrase?: (id: string) => void;
-}) {
-  const [editMode, setEditMode] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [newPhraseText, setNewPhraseText] = useState('');
-  const [renamingId, setRenamingId] = useState<string | null>(null);
-  const [renameText, setRenameText] = useState('');
-
-  const zoneName = areaName.toLowerCase();
-  const isRelevant = (p: Phrase) =>
-    !p.keywords || p.keywords.length === 0 || p.keywords.some((kw) => zoneName.includes(kw.toLowerCase()));
-
-  // Always shown in full, scoped to this zone — NOT filtered down by what's
-  // already typed. Filtering by the comment text was the original bug: selecting
-  // one chip made the comment itself the filter query, which wiped out every
-  // other chip.
-  const relevant = phrases.filter(isRelevant);
-
-  // A chip is "selected" if its exact text is already one of the comma-separated
-  // segments in the comment, so multiple chips can be built up together and each
-  // stays tappable to remove just that one.
-  const segments = value
-    .split(',')
-    .map((s) => s.trim())
-    .filter(Boolean);
-
-  function toggle(phrase: Phrase) {
-    const already = segments.includes(phrase.text);
-    const nextSegments = already ? segments.filter((s) => s !== phrase.text) : [...segments, phrase.text];
-    onSelect(nextSegments.join(', '));
-  }
-
-  // Separate search over the FULL phrase list (not just this zone's relevant set),
-  // for anomalies the zone-scoping doesn't cover — deliberately kept out of the
-  // comment box itself so typing here can never wipe out the persistent chips.
-  const searchMatches = searchQuery.trim()
-    ? phrases.filter(
-        (p) =>
-          p.text.toLowerCase().includes(searchQuery.trim().toLowerCase()) &&
-          !relevant.some((r) => r.id === p.id)
-      )
-    : [];
-
-  function submitNewPhrase() {
-    const trimmed = newPhraseText.trim();
-    if (!trimmed || !onAddPhrase) return;
-    onAddPhrase(trimmed);
-    setNewPhraseText('');
-  }
-
-  function submitRename(id: string) {
-    const trimmed = renameText.trim();
-    if (!trimmed || !onRenamePhrase) return;
-    onRenamePhrase(id, trimmed);
-    setRenamingId(null);
-  }
-
-  return (
-    <div className="space-y-1.5">
-      <div className="flex flex-wrap gap-1.5 items-center">
-        {relevant.map((phrase) => {
-          const selected = segments.includes(phrase.text);
-
-          if (editMode && renamingId === phrase.id) {
-            return (
-              <span key={phrase.id} className="flex items-center gap-1">
-                <input
-                  autoFocus
-                  value={renameText}
-                  onChange={(e) => setRenameText(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') submitRename(phrase.id);
-                    if (e.key === 'Escape') setRenamingId(null);
-                  }}
-                  className="text-[11px] rounded-full border border-rsl-navy/20 px-2 py-1 w-28"
-                />
-                <button type="button" onClick={() => submitRename(phrase.id)} className="text-pass text-xs">
-                  ✓
-                </button>
-              </span>
-            );
-          }
-
-          if (editMode) {
-            return (
-              <span
-                key={phrase.id}
-                className="text-[11px] bg-rsl-navy/5 rounded-full pl-2.5 pr-1 py-1 flex items-center gap-1"
-              >
-                <button
-                  type="button"
-                  onClick={() => {
-                    setRenamingId(phrase.id);
-                    setRenameText(phrase.text);
-                  }}
-                  className="text-rsl-navy/70"
-                >
-                  {phrase.text}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (
-                      window.confirm(
-                        `Remove "${phrase.text}" from this list everywhere it appears — not just this zone? This can't be undone.`
-                      )
-                    ) {
-                      onDeletePhrase?.(phrase.id);
-                    }
-                  }}
-                  className="text-rsl-navy/30 hover:text-rsl-red px-1"
-                  aria-label={`Delete "${phrase.text}"`}
-                >
-                  ✕
-                </button>
-              </span>
-            );
-          }
-
-          return (
-            <button
-              key={phrase.id}
-              type="button"
-              onClick={() => toggle(phrase)}
-              className={`text-[11px] rounded-full px-2.5 py-1 transition-colors ${
-                selected ? 'bg-rsl-navy text-white' : 'text-rsl-navy/60 bg-rsl-navy/5 hover:bg-rsl-navy/10'
-              }`}
-            >
-              {selected ? '✓ ' : ''}
-              {phrase.text}
-            </button>
-          );
-        })}
-
-        {(onAddPhrase || onRenamePhrase || onDeletePhrase) && (
-          <button
-            type="button"
-            onClick={() => {
-              setEditMode((v) => !v);
-              setRenamingId(null);
-            }}
-            className="text-rsl-navy/30 hover:text-rsl-navy/60 text-[11px] px-1"
-            aria-label="Edit phrase chips"
-          >
-            {editMode ? 'Done' : '✎'}
-          </button>
-        )}
-      </div>
-
-      {editMode && onAddPhrase && (
-        <div className="flex gap-1.5 items-center">
-          <input
-            value={newPhraseText}
-            onChange={(e) => setNewPhraseText(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') submitNewPhrase();
-            }}
-            placeholder="Add a phrase…"
-            className="text-[11px] rounded-full border border-rsl-navy/20 px-2.5 py-1 flex-1 min-w-0"
-          />
-          <button
-            type="button"
-            onClick={submitNewPhrase}
-            className="text-[11px] font-semibold text-white bg-rsl-navy rounded-full px-3 py-1 shrink-0"
-          >
-            Add
-          </button>
-        </div>
-      )}
-      {editMode && phrases.length >= MAX_PHRASES_PER_CATEGORY && (
-        <p className="text-[10px] text-rsl-gold">
-          {phrases.length} phrases in this list — consider removing one you don't need to keep it scannable.
-        </p>
-      )}
-
-      {!editMode && (onAddPhrase || onRenamePhrase || onDeletePhrase) && (
-        <input
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          placeholder="Search other phrases…"
-          className="text-[11px] text-rsl-navy/50 rounded-full border border-rsl-navy/10 px-2.5 py-1 w-full sm:w-52"
-        />
-      )}
-      {searchMatches.length > 0 && (
-        <div className="flex flex-wrap gap-1.5">
-          {searchMatches.map((phrase) => (
-            <button
-              key={phrase.id}
-              type="button"
-              onClick={() => toggle(phrase)}
-              className="text-[11px] text-rsl-blue bg-rsl-blue/5 hover:bg-rsl-blue/10 rounded-full px-2.5 py-1"
-            >
-              {phrase.text}
-            </button>
-          ))}
         </div>
       )}
     </div>

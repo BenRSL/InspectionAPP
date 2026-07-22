@@ -4,6 +4,8 @@ import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { supabaseBrowser } from '@/lib/supabase-browser';
 import type { HealthCategory, HealthCondition, LifeExpectancyBand } from '@/lib/health';
 import { CONDITION_OPTIONS, LIFE_EXPECTANCY_OPTIONS, computeRequiresAttention } from '@/lib/health';
+import { type Phrase, type ZoneTypeAssignment, buildZoneTypeIndex } from '@/lib/common-phrases';
+import PhraseChips from '@/components/PhraseChips';
 
 type SaveStatus = 'idle' | 'saving' | 'saved' | 'error';
 
@@ -77,6 +79,17 @@ export default function HealthInspector({
     categories.forEach((c) => c.items.forEach((it) => (init[it.id] = emptyItemState())));
     return init;
   });
+
+  // Comment chip bank — SOHC shares the exact same comment_phrases pool and
+  // curated zone-type assignments as Stage 1 (Bible Section 8.2). Unlike
+  // Stage 1 there's no cleaning/maintenance split here, so all phrases load
+  // as one flat list; relevance for a given item is decided by its
+  // category name (e.g. "Roof & External Envelope") against the same
+  // zoneTypeIndex Stage 1 uses. Phrase bank management (add/rename/delete)
+  // stays in Stage 1's UI and the admin Chip Bank screen — SOHC only selects.
+  const [phrases, setPhrases] = useState<Phrase[]>([]);
+  const [zoneTypeAssignments, setZoneTypeAssignments] = useState<ZoneTypeAssignment[]>([]);
+  const zoneTypeIndex = useMemo(() => buildZoneTypeIndex(zoneTypeAssignments), [zoneTypeAssignments]);
 
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -175,6 +188,26 @@ export default function HealthInspector({
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [siteDbId]);
+
+  // ---- Load the shared comment phrase bank + curated zone-type assignments
+  // once on mount. Independent of the inspection load above — same
+  // comment_phrases / comment_phrase_zone_types tables Stage 1 uses, just
+  // loaded flat (no cleaning/maintenance split) since SOHC doesn't have that axis. ----
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const [phrasesRes, assignmentsRes] = await Promise.all([
+        supabase.from('comment_phrases').select('id, category, text, keywords').order('text'),
+        supabase.from('comment_phrase_zone_types').select('id, phrase_id, zone_type_name'),
+      ]);
+      if (!cancelled && phrasesRes.data) setPhrases(phrasesRes.data);
+      if (!cancelled && assignmentsRes.data) setZoneTypeAssignments(assignmentsRes.data);
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const allItems = categoriesState.flatMap((c) => c.items);
   const totalItems = allItems.length;
@@ -1017,6 +1050,7 @@ export default function HealthInspector({
             >
               <HealthItemCard
                 itemName={item.name}
+                categoryName={activeCategory.name}
                 state={itemState[item.id]}
                 onChange={(patch) => setItem(item.id, patch)}
                 onUploadPhoto={(file) => uploadPhoto(item.id, file)}
@@ -1035,6 +1069,8 @@ export default function HealthInspector({
                 deleteBusy={structureBusy}
                 isDragging={draggingItemId === item.id}
                 onDragHandlePointerDown={() => startDragItem(activeCategory.id, item.id)}
+                phrases={phrases}
+                zoneTypeIndex={zoneTypeIndex}
               />
             </div>
           ))}
@@ -1143,6 +1179,7 @@ export default function HealthInspector({
                     </div>
                     <HealthItemCard
                       itemName={item.name}
+                      categoryName={category.name}
                       state={itemState[item.id]}
                       onChange={(patch) => setItem(item.id, patch)}
                       onUploadPhoto={(file) => uploadPhoto(item.id, file)}
@@ -1150,6 +1187,8 @@ export default function HealthInspector({
                       resolvePhotoUrl={resolvePhotoUrl}
                       photoBusy={photoUploadState[item.id]?.busy ?? false}
                       photoError={photoUploadState[item.id]?.error ?? null}
+                      phrases={phrases}
+                      zoneTypeIndex={zoneTypeIndex}
                     />
                   </div>
                 ))}
@@ -1240,6 +1279,7 @@ function SaveIndicator({ status }: { status: SaveStatus }) {
 
 function HealthItemCard({
   itemName,
+  categoryName,
   state,
   onChange,
   onUploadPhoto,
@@ -1258,8 +1298,11 @@ function HealthItemCard({
   deleteBusy = false,
   isDragging = false,
   onDragHandlePointerDown,
+  phrases = [],
+  zoneTypeIndex,
 }: {
   itemName: string;
+  categoryName: string;
   state: ItemState;
   onChange: (patch: Partial<ItemState>) => void;
   onUploadPhoto: (file: File) => void;
@@ -1278,6 +1321,8 @@ function HealthItemCard({
   deleteBusy?: boolean;
   isDragging?: boolean;
   onDragHandlePointerDown?: () => void;
+  phrases?: Phrase[];
+  zoneTypeIndex?: Map<string, Set<string>>;
 }) {
   const selectId = useId();
   // Photo upload only appears once condition is Fair or worse — matches the
@@ -1420,6 +1465,16 @@ function HealthItemCard({
         rows={2}
         className="w-full text-sm border border-rsl-navy/15 rounded-lg px-3 py-2 text-rsl-navy resize-none"
       />
+      {zoneTypeIndex && (
+        <PhraseChips
+          phrases={phrases}
+          zoneTypeIndex={zoneTypeIndex}
+          zoneTypeName={categoryName}
+          value={state.comment}
+          onSelect={(next) => onChange({ comment: next })}
+        />
+      )}
+      <p className="text-[11px] text-rsl-navy/35 -mt-1.5">Tap the mic on your keyboard to dictate</p>
 
       {showPhoto && (
         <PhotoUploader
