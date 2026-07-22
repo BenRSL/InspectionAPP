@@ -4,8 +4,9 @@ import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import { supabaseBrowser } from '@/lib/supabase-browser';
 import InsightsTab from '@/components/InsightsTab';
+import ChipBankTab from '@/components/ChipBankTab';
 
-type Tab = 'sites' | 'areas' | 'users' | 'insights' | 'tutorial';
+type Tab = 'sites' | 'areas' | 'users' | 'insights' | 'chips' | 'tutorial';
 
 type SiteRow = {
   id: string;
@@ -126,6 +127,7 @@ export default function AdminPage() {
               ['areas', 'Areas & Checklist Items'],
               ['users', 'Users'],
               ['insights', 'Insights'],
+              ['chips', 'Chip Bank'],
               ['tutorial', 'Tutorial'],
             ] as [Tab, string][]
           ).map(([id, label]) => (
@@ -177,6 +179,7 @@ export default function AdminPage() {
                 />
               )}
               {tab === 'insights' && <InsightsTab />}
+              {tab === 'chips' && <ChipBankTab />}
               {tab === 'tutorial' && <TutorialTab />}
             </>
           )}
