@@ -79,7 +79,7 @@ export default function Inspector({
     Record<string, { busy: boolean; error: string | null }>
   >({});
 
-  const [reportBusy, setReportBusy] = useState<'download' | 'email' | null>(null);
+  const [reportBusy, setReportBusy] = useState<'download' | 'email' | 'excel' | null>(null);
   const [reportMessage, setReportMessage] = useState<string | null>(null);
 
   const [inspectionStatus, setInspectionStatus] = useState<'in_progress' | 'complete' | null>(null);
@@ -723,6 +723,34 @@ export default function Inspector({
     }
   }
 
+  // Excel doesn't need the popup-blocker dance downloadReport uses — the
+  // response's Content-Disposition: attachment header makes the browser
+  // download it directly rather than trying to navigate to it, so a plain
+  // anchor click is enough.
+  async function downloadExcel() {
+    const inspectionId = inspectionIdRef.current;
+    if (!inspectionId) return;
+    setReportBusy('excel');
+    setReportMessage(null);
+    try {
+      const res = await fetch(`/api/reports/${inspectionId}/xlsx`);
+      if (!res.ok) throw new Error('Could not generate the spreadsheet');
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${site.name.replace(/[^a-z0-9]+/gi, '-')}-inspection-report.xlsx`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 30000);
+    } catch (err) {
+      setReportMessage(err instanceof Error ? err.message : 'Download failed');
+    } finally {
+      setReportBusy(null);
+    }
+  }
+
   async function emailReport() {
     const inspectionId = inspectionIdRef.current;
     if (!inspectionId) return;
@@ -1226,13 +1254,20 @@ export default function Inspector({
                 {reportBusy === 'download' ? 'Generating…' : 'View / Print PDF'}
               </button>
               <button
-                onClick={emailReport}
+                onClick={downloadExcel}
                 disabled={reportBusy !== null}
-                className="flex-1 text-sm font-semibold text-white bg-rsl-navy rounded-xl py-3 disabled:opacity-40"
+                className="flex-1 text-sm font-semibold text-rsl-navy border border-rsl-navy/20 rounded-xl py-3 disabled:opacity-40"
               >
-                {reportBusy === 'email' ? 'Sending…' : 'Email Report'}
+                {reportBusy === 'excel' ? 'Generating…' : 'Download Excel'}
               </button>
             </div>
+            <button
+              onClick={emailReport}
+              disabled={reportBusy !== null}
+              className="w-full text-sm font-semibold text-white bg-rsl-navy rounded-xl py-3 disabled:opacity-40"
+            >
+              {reportBusy === 'email' ? 'Sending…' : 'Email Report'}
+            </button>
             {reportMessage && (
               <p className="text-xs text-center text-rsl-navy/60">{reportMessage}</p>
             )}

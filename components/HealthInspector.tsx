@@ -101,7 +101,7 @@ export default function HealthInspector({
   const [inspectionStatus, setInspectionStatus] = useState<'in_progress' | 'completed' | null>(null);
   const [clearBusy, setClearBusy] = useState(false);
   const [clearError, setClearError] = useState<string | null>(null);
-  const [reportBusy, setReportBusy] = useState<'download' | 'email' | null>(null);
+  const [reportBusy, setReportBusy] = useState<'download' | 'email' | 'excel' | null>(null);
   const [reportMessage, setReportMessage] = useState<string | null>(null);
 
   const inspectionIdRef = useRef<string | null>(null);
@@ -468,6 +468,33 @@ export default function HealthInspector({
       setTimeout(() => URL.revokeObjectURL(url), 30000);
     } catch (err) {
       newTab?.close();
+      setReportMessage(err instanceof Error ? err.message : 'Download failed');
+    } finally {
+      setReportBusy(null);
+    }
+  }
+
+  // Excel doesn't need the popup-blocker dance downloadReport uses — the
+  // response's Content-Disposition: attachment header makes the browser
+  // download it directly, so a plain anchor click is enough.
+  async function downloadExcel() {
+    const inspectionId = inspectionIdRef.current;
+    if (!inspectionId) return;
+    setReportBusy('excel');
+    setReportMessage(null);
+    try {
+      const res = await fetch(`/api/reports/health/${inspectionId}/xlsx`);
+      if (!res.ok) throw new Error('Could not generate the spreadsheet');
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${siteName.replace(/[^a-z0-9]+/gi, '-')}-sohc-report-${currentYear()}.xlsx`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 30000);
+    } catch (err) {
       setReportMessage(err instanceof Error ? err.message : 'Download failed');
     } finally {
       setReportBusy(null);
@@ -1212,13 +1239,20 @@ export default function HealthInspector({
                 {reportBusy === 'download' ? 'Generating…' : 'View / Print PDF'}
               </button>
               <button
-                onClick={emailReport}
+                onClick={downloadExcel}
                 disabled={reportBusy !== null}
-                className="flex-1 text-sm font-semibold text-white bg-rsl-navy rounded-xl py-3 disabled:opacity-40"
+                className="flex-1 text-sm font-semibold text-rsl-navy border border-rsl-navy/20 rounded-xl py-3 disabled:opacity-40"
               >
-                {reportBusy === 'email' ? 'Sending…' : 'Email Report'}
+                {reportBusy === 'excel' ? 'Generating…' : 'Download Excel'}
               </button>
             </div>
+            <button
+              onClick={emailReport}
+              disabled={reportBusy !== null}
+              className="w-full text-sm font-semibold text-white bg-rsl-navy rounded-xl py-3 disabled:opacity-40"
+            >
+              {reportBusy === 'email' ? 'Sending…' : 'Email Report'}
+            </button>
             {reportMessage && <p className="text-xs text-center text-rsl-navy/60">{reportMessage}</p>}
             <p className="text-[11px] text-rsl-navy/40 text-center">
               Email currently goes to the test account only, while rslqld.org is pending domain
