@@ -41,6 +41,17 @@ export default function ChipBankTab() {
   const [hoveredZoneType, setHoveredZoneType] = useState<string | null>(null);
   const bucketRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
+  // Phrase text management (add/rename/delete) — mirrors the exact same
+  // functions in Inspector.tsx's pencil-icon editor, now also available
+  // here so managing the bank doesn't require opening an inspection first.
+  const [editingBank, setEditingBank] = useState(false);
+  const [renamingPhraseId, setRenamingPhraseId] = useState<string | null>(null);
+  const [renameText, setRenameText] = useState('');
+  const [newPhraseText, setNewPhraseText] = useState<{ cleaning: string; maintenance: string }>({
+    cleaning: '',
+    maintenance: '',
+  });
+
   async function loadAll() {
     setLoading(true);
     setLoadError(null);
@@ -163,6 +174,53 @@ export default function ChipBankTab() {
     setDraggingPhraseId(phraseId);
   }
 
+  async function addPhrase(category: 'cleaning' | 'maintenance') {
+    const trimmed = newPhraseText[category].trim();
+    if (!trimmed) return;
+    if (phrases.some((p) => p.category === category && p.text.toLowerCase() === trimmed.toLowerCase())) {
+      setNewPhraseText((prev) => ({ ...prev, [category]: '' }));
+      return; // already there
+    }
+
+    const { data, error } = await supabase
+      .from('comment_phrases')
+      .insert({ category, text: trimmed })
+      .select('id, category, text, keywords')
+      .single();
+
+    if (error || !data) {
+      setActionError(`Couldn't add "${trimmed}": ${error?.message ?? 'unknown error'}`);
+      return;
+    }
+
+    setPhrases((prev) => [...prev, data]);
+    setNewPhraseText((prev) => ({ ...prev, [category]: '' }));
+  }
+
+  async function renamePhrase(id: string) {
+    const trimmed = renameText.trim();
+    setRenamingPhraseId(null);
+    if (!trimmed) return;
+
+    setPhrases((prev) => prev.map((p) => (p.id === id ? { ...p, text: trimmed } : p)));
+    const { error } = await supabase.from('comment_phrases').update({ text: trimmed }).eq('id', id);
+    if (error) setActionError(`Couldn't rename that phrase: ${error.message}`);
+  }
+
+  async function deletePhrase(phrase: BankPhrase) {
+    if (
+      !window.confirm(
+        `Remove "${phrase.text}" from the bank entirely — not just one zone? This also removes it everywhere it's currently assigned. This can't be undone.`
+      )
+    )
+      return;
+
+    setPhrases((prev) => prev.filter((p) => p.id !== phrase.id));
+    setAssignments((prev) => prev.filter((a) => a.phrase_id !== phrase.id));
+    const { error } = await supabase.from('comment_phrases').delete().eq('id', phrase.id);
+    if (error) setActionError(`Couldn't remove "${phrase.text}": ${error.message}`);
+  }
+
   useEffect(() => {
     if (!draggingPhraseId) return;
 
@@ -208,8 +266,8 @@ export default function ChipBankTab() {
     <div className="space-y-4">
       <p className="text-sm text-rsl-navy/60">
         Drag a chip from the bank onto a zone type to make it show up there during inspections — on both
-        Monthly Inspect and SOHC, at every site. To add, rename, or delete a phrase's text, use the pencil
-        icon next to the chips inside an inspection instead; this screen only decides where each one appears.
+        Monthly Inspect and SOHC, at every site. Use the pencil icon below to add, rename, or delete a
+        phrase's text (the same pencil icon inside an inspection does the same thing).
       </p>
 
       {actionError && (
@@ -224,18 +282,65 @@ export default function ChipBankTab() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* ---- Chip bank ---- */}
         <div>
-          <h3 className="font-display font-bold text-rsl-navy text-sm mb-2">Chip Bank</h3>
+          <div className="flex items-center justify-between gap-2 mb-2">
+            <h3 className="font-display font-bold text-rsl-navy text-sm">Chip Bank</h3>
+            <button
+              type="button"
+              onClick={() => {
+                setEditingBank((v) => !v);
+                setRenamingPhraseId(null);
+              }}
+              className="text-rsl-navy/40 hover:text-rsl-navy/70 text-xs font-semibold"
+            >
+              {editingBank ? 'Done' : '✎ Edit phrases'}
+            </button>
+          </div>
           <div className="border border-rsl-navy/10 rounded-2xl p-4 max-h-[32rem] overflow-y-auto space-y-4">
-            <PhraseBucketGroup label="Cleaning" phrases={cleaningPhrases} onStartDrag={startDrag} draggingPhraseId={draggingPhraseId} />
+            <PhraseBucketGroup
+              label="Cleaning"
+              category="cleaning"
+              phrases={cleaningPhrases}
+              onStartDrag={startDrag}
+              draggingPhraseId={draggingPhraseId}
+              editing={editingBank}
+              renamingPhraseId={renamingPhraseId}
+              renameText={renameText}
+              onStartRename={(id, text) => {
+                setRenamingPhraseId(id);
+                setRenameText(text);
+              }}
+              onRenameTextChange={setRenameText}
+              onSubmitRename={renamePhrase}
+              onCancelRename={() => setRenamingPhraseId(null)}
+              onDelete={deletePhrase}
+              newPhraseText={newPhraseText.cleaning}
+              onNewPhraseTextChange={(v) => setNewPhraseText((prev) => ({ ...prev, cleaning: v }))}
+              onAddPhrase={() => addPhrase('cleaning')}
+            />
             <PhraseBucketGroup
               label="Maintenance"
+              category="maintenance"
               phrases={maintenancePhrases}
               onStartDrag={startDrag}
               draggingPhraseId={draggingPhraseId}
+              editing={editingBank}
+              renamingPhraseId={renamingPhraseId}
+              renameText={renameText}
+              onStartRename={(id, text) => {
+                setRenamingPhraseId(id);
+                setRenameText(text);
+              }}
+              onRenameTextChange={setRenameText}
+              onSubmitRename={renamePhrase}
+              onCancelRename={() => setRenamingPhraseId(null)}
+              onDelete={deletePhrase}
+              newPhraseText={newPhraseText.maintenance}
+              onNewPhraseTextChange={(v) => setNewPhraseText((prev) => ({ ...prev, maintenance: v }))}
+              onAddPhrase={() => addPhrase('maintenance')}
             />
             {phrases.length === 0 && (
               <p className="text-xs text-rsl-navy/40">
-                No phrases yet — add some from the pencil icon next to any comment field during an inspection.
+                No phrases yet — click "Edit phrases" above to add your first one.
               </p>
             )}
           </div>
@@ -335,39 +440,126 @@ export default function ChipBankTab() {
 
 function PhraseBucketGroup({
   label,
+  category,
   phrases,
   onStartDrag,
   draggingPhraseId,
+  editing,
+  renamingPhraseId,
+  renameText,
+  onStartRename,
+  onRenameTextChange,
+  onSubmitRename,
+  onCancelRename,
+  onDelete,
+  newPhraseText,
+  onNewPhraseTextChange,
+  onAddPhrase,
 }: {
   label: string;
-  phrases: Phrase[];
+  category: 'cleaning' | 'maintenance';
+  phrases: BankPhrase[];
   onStartDrag: (phraseId: string) => void;
   draggingPhraseId: string | null;
+  editing: boolean;
+  renamingPhraseId: string | null;
+  renameText: string;
+  onStartRename: (id: string, text: string) => void;
+  onRenameTextChange: (v: string) => void;
+  onSubmitRename: (id: string) => void;
+  onCancelRename: () => void;
+  onDelete: (phrase: BankPhrase) => void;
+  newPhraseText: string;
+  onNewPhraseTextChange: (v: string) => void;
+  onAddPhrase: () => void;
 }) {
-  if (phrases.length === 0) return null;
+  if (phrases.length === 0 && !editing) return null;
   return (
     <div>
       <p className="text-[10px] font-semibold uppercase tracking-wide text-rsl-navy/40 mb-1.5">{label}</p>
-      <div className="flex flex-wrap gap-1.5">
-        {phrases.map((phrase) => (
-          <button
-            key={phrase.id}
-            type="button"
-            onPointerDown={(e) => {
-              e.preventDefault();
-              onStartDrag(phrase.id);
-            }}
-            style={{ touchAction: 'none' }}
-            className={`text-[11px] rounded-full px-2.5 py-1 cursor-grab active:cursor-grabbing transition-colors ${
-              draggingPhraseId === phrase.id
-                ? 'bg-rsl-navy text-white opacity-70'
-                : 'text-rsl-navy/60 bg-rsl-navy/5 hover:bg-rsl-navy/10'
-            }`}
-          >
-            {phrase.text}
-          </button>
-        ))}
+      <div className="flex flex-wrap gap-1.5 items-center">
+        {phrases.map((phrase) => {
+          if (editing && renamingPhraseId === phrase.id) {
+            return (
+              <span key={phrase.id} className="flex items-center gap-1">
+                <input
+                  autoFocus
+                  value={renameText}
+                  onChange={(e) => onRenameTextChange(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') onSubmitRename(phrase.id);
+                    if (e.key === 'Escape') onCancelRename();
+                  }}
+                  className="text-[11px] rounded-full border border-rsl-navy/20 px-2 py-1 w-32"
+                />
+                <button type="button" onClick={() => onSubmitRename(phrase.id)} className="text-pass text-xs">
+                  ✓
+                </button>
+              </span>
+            );
+          }
+
+          if (editing) {
+            return (
+              <span
+                key={phrase.id}
+                className="text-[11px] bg-rsl-navy/5 rounded-full pl-2.5 pr-1 py-1 flex items-center gap-1"
+              >
+                <button type="button" onClick={() => onStartRename(phrase.id, phrase.text)} className="text-rsl-navy/70">
+                  {phrase.text}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onDelete(phrase)}
+                  className="text-rsl-navy/30 hover:text-rsl-red px-1"
+                  aria-label={`Delete "${phrase.text}"`}
+                >
+                  ✕
+                </button>
+              </span>
+            );
+          }
+
+          return (
+            <button
+              key={phrase.id}
+              type="button"
+              onPointerDown={(e) => {
+                e.preventDefault();
+                onStartDrag(phrase.id);
+              }}
+              style={{ touchAction: 'none' }}
+              className={`text-[11px] rounded-full px-2.5 py-1 cursor-grab active:cursor-grabbing transition-colors ${
+                draggingPhraseId === phrase.id
+                  ? 'bg-rsl-navy text-white opacity-70'
+                  : 'text-rsl-navy/60 bg-rsl-navy/5 hover:bg-rsl-navy/10'
+              }`}
+            >
+              {phrase.text}
+            </button>
+          );
+        })}
       </div>
+      {editing && (
+        <div className="flex gap-1.5 items-center mt-1.5">
+          <input
+            value={newPhraseText}
+            onChange={(e) => onNewPhraseTextChange(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') onAddPhrase();
+            }}
+            placeholder={`Add a ${category} phrase…`}
+            className="text-[11px] rounded-full border border-rsl-navy/20 px-2.5 py-1 flex-1 min-w-0"
+          />
+          <button
+            type="button"
+            onClick={onAddPhrase}
+            className="text-[11px] font-semibold text-white bg-rsl-navy rounded-full px-3 py-1 shrink-0"
+          >
+            Add
+          </button>
+        </div>
+      )}
     </div>
   );
 }
