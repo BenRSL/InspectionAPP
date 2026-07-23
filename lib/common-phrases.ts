@@ -24,7 +24,7 @@ export type ZoneTypeAssignment = {
 // Soft cap per category — shown as a gentle nudge once you hit it while adding a
 // new phrase, not enforced as a hard block. Purely a "keep it scannable on a phone
 // screen" guideline; change freely.
-export const MAX_PHRASES_PER_CATEGORY = 15;
+export const MAX_PHRASES_PER_CATEGORY = 30;
 
 // Builds zone_type_name (lowercased) -> Set<phrase id> for fast relevance
 // lookups. Case-insensitive so "Toilets" and "toilets" are treated as the
