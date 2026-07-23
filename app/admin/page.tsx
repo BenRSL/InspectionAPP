@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import { supabaseBrowser } from '@/lib/supabase-browser';
-import InsightsTab from '@/components/InsightsTab';
+import StatsInsightsTab from '@/components/StatsInsightsTab';
 import ChipBankTab from '@/components/ChipBankTab';
 import AssetCostsTab from '@/components/AssetCostsTab';
 
@@ -127,7 +127,7 @@ export default function AdminPage() {
               ['sites', 'Sites'],
               ['areas', 'Areas & Checklist Items'],
               ['users', 'Users'],
-              ['insights', 'Insights'],
+              ['insights', 'Stats & Insights'],
               ['chips', 'Chip Bank'],
               ['costs', 'Asset Costs'],
               ['tutorial', 'Tutorial'],
@@ -180,7 +180,7 @@ export default function AdminPage() {
                   onChanged={loadAll}
                 />
               )}
-              {tab === 'insights' && <InsightsTab />}
+              {tab === 'insights' && <StatsInsightsTab />}
               {tab === 'chips' && <ChipBankTab />}
               {tab === 'costs' && <AssetCostsTab />}
               {tab === 'tutorial' && <TutorialTab />}
