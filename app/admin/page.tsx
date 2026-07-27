@@ -6,8 +6,9 @@ import { supabaseBrowser } from '@/lib/supabase-browser';
 import StatsInsightsTab from '@/components/StatsInsightsTab';
 import ChipBankTab from '@/components/ChipBankTab';
 import AssetCostsTab from '@/components/AssetCostsTab';
+import InspectionHistoryTab from '@/components/InspectionHistoryTab';
 
-type Tab = 'sites' | 'areas' | 'users' | 'insights' | 'chips' | 'costs' | 'tutorial';
+type Tab = 'sites' | 'areas' | 'users' | 'insights' | 'chips' | 'costs' | 'history' | 'tutorial';
 
 type SiteRow = {
   id: string;
@@ -130,6 +131,7 @@ export default function AdminPage() {
               ['insights', 'Stats & Insights'],
               ['chips', 'Chip Bank'],
               ['costs', 'Asset Costs'],
+              ['history', 'Inspection History'],
               ['tutorial', 'Tutorial'],
             ] as [Tab, string][]
           ).map(([id, label]) => (
@@ -183,6 +185,7 @@ export default function AdminPage() {
               {tab === 'insights' && <StatsInsightsTab />}
               {tab === 'chips' && <ChipBankTab />}
               {tab === 'costs' && <AssetCostsTab />}
+              {tab === 'history' && <InspectionHistoryTab />}
               {tab === 'tutorial' && <TutorialTab />}
             </>
           )}
