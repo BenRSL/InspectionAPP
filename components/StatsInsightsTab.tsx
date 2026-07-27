@@ -3,14 +3,15 @@
 import { useState } from 'react';
 import InsightsTab from '@/components/InsightsTab';
 import AssetLifecycleTab from '@/components/AssetLifecycleTab';
+import ImportExportTab from '@/components/ImportExportTab';
 
 // Bible Section 8.5 — expands the old single Insights tab into a menu.
-// Monthly Inspect Insights (InsightsTab) is completely unchanged; Asset
-// Lifecycle is new. A third area, Import/Export tools, isn't built yet —
-// deliberately deferred until the Excel cost-import work (Bible 8.4 Stages
-// 3–4) is closer, per Ben's direction to leave cost data out for now.
+// Monthly Inspect Insights (InsightsTab) is unchanged; Asset Lifecycle and
+// Import/Export are new. Import/Export currently ships the cost template
+// download (Bible 8.4 Stage 3) only — the upload/match flow (Stage 4) is a
+// separate follow-up piece of work.
 export default function StatsInsightsTab() {
-  const [view, setView] = useState<'monthly' | 'lifecycle'>('monthly');
+  const [view, setView] = useState<'monthly' | 'lifecycle' | 'importExport'>('monthly');
 
   return (
     <div className="space-y-5">
@@ -31,10 +32,19 @@ export default function StatsInsightsTab() {
         >
           Asset Lifecycle
         </button>
+        <button
+          onClick={() => setView('importExport')}
+          className={`text-xs font-semibold px-3 py-1.5 rounded-full transition-colors ${
+            view === 'importExport' ? 'bg-rsl-blue text-white' : 'text-rsl-navy/60'
+          }`}
+        >
+          Import/Export
+        </button>
       </div>
 
       {view === 'monthly' && <InsightsTab />}
       {view === 'lifecycle' && <AssetLifecycleTab />}
+      {view === 'importExport' && <ImportExportTab />}
     </div>
   );
 }
