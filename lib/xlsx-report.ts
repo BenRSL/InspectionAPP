@@ -1,7 +1,10 @@
 import * as XLSX from 'xlsx';
 import type { ReportData } from './report';
 import type { HealthReportData } from './health-report';
+import type { CostTemplateData } from './cost-template';
 import { LIFE_EXPECTANCY_OPTIONS, computeRequiresAttention } from './health';
+
+const COST_TEMPLATE_COL_WIDTHS = [{ wch: 38 }, { wch: 24 }, { wch: 24 }, { wch: 16 }, { wch: 20 }];
 
 // Same column widths reused across every sheet in both workbooks — keeps
 // Comment columns readable without the rest of the table going wide too.
@@ -94,6 +97,40 @@ export function renderHealthReportXlsx(data: HealthReportData): Buffer {
   const flaggedSheet = XLSX.utils.aoa_to_sheet([...infoRows, headerRow, ...flaggedRows]);
   flaggedSheet['!cols'] = HEALTH_COL_WIDTHS;
   XLSX.utils.book_append_sheet(wb, flaggedSheet, 'Flagged Items');
+
+  return XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' }) as Buffer;
+}
+
+// ============================================================
+// SOHC — Replacement cost template (Bible 8.4, Stage 3)
+// ============================================================
+
+export function renderCostTemplateXlsx(data: CostTemplateData): Buffer {
+  const headerRow = ['Item ID (do not edit)', 'Category', 'Item', 'Replacement Cost', 'Cost Confidence'];
+  const dataRows = data.categories.flatMap((c) =>
+    c.items.map((it) => [it.id, c.name, it.name, it.replacementCost ?? '', it.costConfidence ?? ''])
+  );
+
+  const wb = XLSX.utils.book_new();
+
+  const sheet = XLSX.utils.aoa_to_sheet([headerRow, ...dataRows]);
+  sheet['!cols'] = COST_TEMPLATE_COL_WIDTHS;
+  XLSX.utils.book_append_sheet(wb, sheet, 'Costs');
+
+  const instructions = XLSX.utils.aoa_to_sheet([
+    [`Replacement cost template — ${data.siteName}`],
+    [],
+    ['Only edit the "Replacement Cost" and "Cost Confidence" columns.'],
+    ['Do not edit "Item ID" — it is used to match each row back to the correct asset on upload.'],
+    ['Do not add, delete, or reorder rows.'],
+    [],
+    ['Replacement Cost: a number only, e.g. 1250. Leave blank to clear a cost.'],
+    ['Cost Confidence: must be exactly "estimated" or "quoted" (leave blank for neither).'],
+    [],
+    ['Save this file, then upload it from Admin > Stats & Insights > Import/Export.'],
+  ]);
+  instructions['!cols'] = [{ wch: 90 }];
+  XLSX.utils.book_append_sheet(wb, instructions, 'Instructions');
 
   return XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' }) as Buffer;
 }
