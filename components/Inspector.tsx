@@ -3,7 +3,7 @@
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { supabaseBrowser } from '@/lib/supabase-browser';
 import type { Site, Floor, FloorArea, ItemCategory } from '@/lib/sites';
-import { type Phrase, type ZoneTypeAssignment, MAX_PHRASES_PER_CATEGORY, buildZoneTypeIndex } from '@/lib/common-phrases';
+import { type Phrase, type ZoneTypeAssignment, MAX_PHRASES_PER_CATEGORY, buildZoneTypeIndex, fetchAllZoneTypeAssignments } from '@/lib/common-phrases';
 import PhraseChips from '@/components/PhraseChips';
 
 type PassState = boolean | null; // null = not yet assessed
@@ -121,9 +121,9 @@ export default function Inspector({
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const [phrasesRes, assignmentsRes] = await Promise.all([
+      const [phrasesRes, assignments] = await Promise.all([
         supabase.from('comment_phrases').select('id, category, text, keywords').order('text'),
-        supabase.from('comment_phrase_zone_types').select('id, phrase_id, zone_type_name'),
+        fetchAllZoneTypeAssignments(supabase),
       ]);
       if (!cancelled && phrasesRes.data) {
         setPhrases({
@@ -131,8 +131,8 @@ export default function Inspector({
           maintenance: phrasesRes.data.filter((p) => p.category === 'maintenance'),
         });
       }
-      if (!cancelled && assignmentsRes.data) {
-        setZoneTypeAssignments(assignmentsRes.data);
+      if (!cancelled) {
+        setZoneTypeAssignments(assignments);
       }
     })();
     return () => {

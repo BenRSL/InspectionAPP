@@ -4,7 +4,7 @@ import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { supabaseBrowser } from '@/lib/supabase-browser';
 import type { HealthCategory, HealthCondition, LifeExpectancyBand } from '@/lib/health';
 import { CONDITION_OPTIONS, LIFE_EXPECTANCY_OPTIONS, computeRequiresAttention } from '@/lib/health';
-import { type Phrase, type ZoneTypeAssignment, buildZoneTypeIndex } from '@/lib/common-phrases';
+import { type Phrase, type ZoneTypeAssignment, buildZoneTypeIndex, fetchAllZoneTypeAssignments } from '@/lib/common-phrases';
 import PhraseChips from '@/components/PhraseChips';
 
 type SaveStatus = 'idle' | 'saving' | 'saved' | 'error';
@@ -196,12 +196,12 @@ export default function HealthInspector({
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const [phrasesRes, assignmentsRes] = await Promise.all([
+      const [phrasesRes, assignments] = await Promise.all([
         supabase.from('comment_phrases').select('id, category, text, keywords').order('text'),
-        supabase.from('comment_phrase_zone_types').select('id, phrase_id, zone_type_name'),
+        fetchAllZoneTypeAssignments(supabase),
       ]);
       if (!cancelled && phrasesRes.data) setPhrases(phrasesRes.data);
-      if (!cancelled && assignmentsRes.data) setZoneTypeAssignments(assignmentsRes.data);
+      if (!cancelled) setZoneTypeAssignments(assignments);
     })();
     return () => {
       cancelled = true;
