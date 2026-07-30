@@ -176,6 +176,69 @@ export default function CalendarTab() {
       .sort((a, b) => b.count - a.count);
   }, [scheduled, users, year, month]);
 
+  const [bulkOpen, setBulkOpen] = useState(false);
+  const [bulkSiteIds, setBulkSiteIds] = useState<string[]>([]);
+  const [bulkType, setBulkType] = useState<InspectionType>('monthly');
+  const [bulkStartDate, setBulkStartDate] = useState('');
+  const [bulkIntervalDays, setBulkIntervalDays] = useState(7);
+  const [bulkAssignedTo, setBulkAssignedTo] = useState('');
+  const [bulkSendInvite, setBulkSendInvite] = useState(true);
+  const [bulkSaving, setBulkSaving] = useState(false);
+  const [bulkError, setBulkError] = useState<string | null>(null);
+
+  async function refreshEvents() {
+    const [lc, sc] = await Promise.all([
+      fetchLastCompleted(supabase, selectedSiteIds),
+      fetchScheduled(supabase, selectedSiteIds),
+    ]);
+    setLastCompleted(lc);
+    setScheduled(sc);
+  }
+
+  async function rescheduleRow(id: string, newDate: string) {
+    await supabase.from('scheduled_inspections').update({ scheduled_date: newDate }).eq('id', id);
+    await refreshEvents();
+  }
+
+  async function submitBulk() {
+    if (bulkSiteIds.length === 0 || !bulkStartDate) return;
+    setBulkSaving(true);
+    setBulkError(null);
+    try {
+      for (let i = 0; i < bulkSiteIds.length; i++) {
+        const d = parseLocalDate(bulkStartDate);
+        d.setDate(d.getDate() + i * bulkIntervalDays);
+        const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(
+          d.getDate()
+        ).padStart(2, '0')}`;
+        const res = await fetch('/api/schedule', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            siteId: bulkSiteIds[i],
+            inspectionType: bulkType,
+            scheduledDate: dateStr,
+            assignedTo: bulkAssignedTo || null,
+            notes: null,
+            sendInvite: bulkSendInvite,
+          }),
+        });
+        if (!res.ok) {
+          const result = await res.json();
+          throw new Error(`${siteName(bulkSiteIds[i])}: ${result.error ?? 'Could not save.'}`);
+        }
+      }
+      await refreshEvents();
+      setBulkSiteIds([]);
+      setBulkStartDate('');
+      setBulkOpen(false);
+    } catch (err) {
+      setBulkError(err instanceof Error ? err.message : 'Could not save.');
+    } finally {
+      setBulkSaving(false);
+    }
+  }
+
   async function submitSchedule() {
     if (!formSiteId || !selectedDay) return;
     setSaving(true);
@@ -199,12 +262,7 @@ export default function CalendarTab() {
         setSaving(false);
         return;
       }
-      const [lc, sc] = await Promise.all([
-        fetchLastCompleted(supabase, selectedSiteIds),
-        fetchScheduled(supabase, selectedSiteIds),
-      ]);
-      setLastCompleted(lc);
-      setScheduled(sc);
+      await refreshEvents();
       setFormNotes('');
       setFormAssignedTo('');
       setSaving(false);
@@ -217,12 +275,7 @@ export default function CalendarTab() {
   async function removeScheduled(id: string) {
     if (!window.confirm('Remove this scheduled inspection?')) return;
     await supabase.from('scheduled_inspections').delete().eq('id', id);
-    const [lc, sc] = await Promise.all([
-      fetchLastCompleted(supabase, selectedSiteIds),
-      fetchScheduled(supabase, selectedSiteIds),
-    ]);
-    setLastCompleted(lc);
-    setScheduled(sc);
+    await refreshEvents();
   }
 
   if (loading) return <p className="text-sm text-rsl-navy/50">Loading calendar…</p>;
@@ -244,6 +297,97 @@ export default function CalendarTab() {
           </button>
         ))}
       </div>
+
+      {canSchedule && (
+        <button
+          onClick={() => setBulkOpen((v) => !v)}
+          className="text-xs font-semibold text-rsl-blue underline"
+        >
+          {bulkOpen ? 'Close bulk schedule' : 'Bulk schedule…'}
+        </button>
+      )}
+
+      {bulkOpen && canSchedule && (
+        <div className="bg-rsl-navy/5 rounded-xl p-4 space-y-3">
+          <p className="text-sm font-semibold text-rsl-navy">Bulk schedule</p>
+          <p className="text-xs text-rsl-navy/50">
+            Pick sites, a start date, and a spacing interval — each site gets one inspection, dates spaced
+            sequentially from the start date.
+          </p>
+          <div className="flex flex-wrap gap-2">
+            {sites.map((s) => (
+              <button
+                key={s.id}
+                onClick={() =>
+                  setBulkSiteIds((prev) =>
+                    prev.includes(s.id) ? prev.filter((id) => id !== s.id) : [...prev, s.id]
+                  )
+                }
+                className={`text-xs font-semibold px-2.5 py-1 rounded-full border ${
+                  bulkSiteIds.includes(s.id)
+                    ? 'bg-rsl-blue text-white border-rsl-blue'
+                    : 'border-rsl-navy/20 text-rsl-navy/60'
+                }`}
+              >
+                {s.name}
+              </button>
+            ))}
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <select
+              value={bulkType}
+              onChange={(e) => setBulkType(e.target.value as InspectionType)}
+              className="text-xs border border-rsl-navy/20 rounded-lg px-2 py-1.5"
+            >
+              <option value="monthly">Monthly Inspect</option>
+              <option value="sohc">SOHC</option>
+            </select>
+            <select
+              value={bulkIntervalDays}
+              onChange={(e) => setBulkIntervalDays(Number(e.target.value))}
+              className="text-xs border border-rsl-navy/20 rounded-lg px-2 py-1.5"
+            >
+              <option value={1}>Every 1 day</option>
+              <option value={3}>Every 3 days</option>
+              <option value={7}>Every 7 days</option>
+            </select>
+            <input
+              type="date"
+              value={bulkStartDate}
+              onChange={(e) => setBulkStartDate(e.target.value)}
+              className="text-xs border border-rsl-navy/20 rounded-lg px-2 py-1.5"
+            />
+            <select
+              value={bulkAssignedTo}
+              onChange={(e) => setBulkAssignedTo(e.target.value)}
+              className="text-xs border border-rsl-navy/20 rounded-lg px-2 py-1.5"
+            >
+              <option value="">Assign to… (optional)</option>
+              {users.map((u) => (
+                <option key={u.id} value={u.id}>
+                  {u.email}
+                </option>
+              ))}
+            </select>
+          </div>
+          <label className="flex items-center gap-2 text-xs text-rsl-navy/60">
+            <input
+              type="checkbox"
+              checked={bulkSendInvite}
+              onChange={(e) => setBulkSendInvite(e.target.checked)}
+            />
+            Email a calendar invite to the assigned inspector for each
+          </label>
+          {bulkError && <p className="text-xs text-rsl-red">{bulkError}</p>}
+          <button
+            onClick={submitBulk}
+            disabled={bulkSaving || bulkSiteIds.length === 0 || !bulkStartDate}
+            className="text-xs font-semibold bg-rsl-blue text-white px-3 py-1.5 rounded-lg disabled:opacity-50"
+          >
+            {bulkSaving ? 'Scheduling…' : `Schedule ${bulkSiteIds.length || ''} site${bulkSiteIds.length === 1 ? '' : 's'}`}
+          </button>
+        </div>
+      )}
 
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
@@ -301,13 +445,28 @@ export default function CalendarTab() {
           const dateKey = toDateKey(new Date(year, month, day));
           const dayEvents = eventsByDay.get(dateKey) ?? [];
           const isSelected = selectedDay === dateKey;
+          const scheduledHere = dayEvents.filter((ev) => ev.scheduledRow).map((ev) => ev.scheduledRow!);
+          const dragSource = scheduledHere.length === 1 ? scheduledHere[0] : null;
           return (
             <button
               key={day}
               onClick={() => setSelectedDay(dateKey)}
+              draggable={canSchedule && !!dragSource}
+              onDragStart={(e) => {
+                if (dragSource) e.dataTransfer.setData('text/plain', dragSource.id);
+              }}
+              onDragOver={(e) => {
+                if (canSchedule) e.preventDefault();
+              }}
+              onDrop={(e) => {
+                if (!canSchedule) return;
+                e.preventDefault();
+                const id = e.dataTransfer.getData('text/plain');
+                if (id) rescheduleRow(id, dateKey);
+              }}
               className={`relative aspect-square border rounded-lg text-xs text-rsl-navy/70 flex items-start justify-start p-1 ${
                 isSelected ? 'border-rsl-blue' : 'border-rsl-navy/10'
-              }`}
+              } ${canSchedule && dragSource ? 'cursor-grab' : ''}`}
             >
               {day}
               {dayEvents.length > 0 && (
@@ -325,6 +484,12 @@ export default function CalendarTab() {
           );
         })}
       </div>
+
+      {canSchedule && (
+        <p className="text-[11px] text-rsl-navy/35 text-center">
+          Drag a single-booking day onto another date to reschedule it.
+        </p>
+      )}
 
       {!selectedDay && (
         <p className="text-xs text-rsl-navy/40 text-center py-2">
@@ -349,6 +514,12 @@ export default function CalendarTab() {
                     />
                     {ev.siteName} — {ev.type === 'monthly' ? 'Monthly Inspect' : 'SOHC'} —{' '}
                     {STATUS_LABEL[ev.status]}
+                    {ev.scheduledRow && ev.scheduledRow.status !== 'pending' && (
+                      <span className={ev.scheduledRow.status === 'accepted' ? 'text-green-700' : 'text-rsl-red'}>
+                        {' '}
+                        ({ev.scheduledRow.status === 'accepted' ? 'Accepted' : 'Declined'})
+                      </span>
+                    )}
                   </span>
                   {ev.scheduledRow && canSchedule && (
                     <button
