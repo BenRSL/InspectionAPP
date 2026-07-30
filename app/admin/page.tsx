@@ -7,8 +7,9 @@ import StatsInsightsTab from '@/components/StatsInsightsTab';
 import ChipBankTab from '@/components/ChipBankTab';
 import AssetCostsTab from '@/components/AssetCostsTab';
 import InspectionHistoryTab from '@/components/InspectionHistoryTab';
+import CalendarTab from '@/components/CalendarTab';
 
-type Tab = 'sites' | 'areas' | 'users' | 'insights' | 'chips' | 'costs' | 'history' | 'tutorial';
+type Tab = 'sites' | 'areas' | 'users' | 'insights' | 'costs' | 'calendar' | 'chips' | 'history' | 'tutorial';
 
 type SiteRow = {
   id: string;
@@ -127,11 +128,12 @@ export default function AdminPage() {
             [
               ['sites', 'Sites'],
               ['areas', 'Areas & Checklist Items'],
-              ['users', 'Users'],
               ['insights', 'Stats & Insights'],
-              ['chips', 'Chip Bank'],
               ['costs', 'Asset Costs'],
+              ['calendar', 'Calendar'],
               ['history', 'Inspection History'],
+              ['chips', 'Chip Bank'],
+              ['users', 'Users'],
               ['tutorial', 'Tutorial'],
             ] as [Tab, string][]
           ).map(([id, label]) => (
@@ -185,6 +187,7 @@ export default function AdminPage() {
               {tab === 'insights' && <StatsInsightsTab />}
               {tab === 'chips' && <ChipBankTab />}
               {tab === 'costs' && <AssetCostsTab />}
+              {tab === 'calendar' && <CalendarTab />}
               {tab === 'history' && <InspectionHistoryTab />}
               {tab === 'tutorial' && <TutorialTab />}
             </>
