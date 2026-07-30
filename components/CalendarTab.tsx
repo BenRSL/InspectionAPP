@@ -7,6 +7,7 @@ import {
   fetchScheduled,
   projectNextDue,
   isDueSoon,
+  parseLocalDate,
   type InspectionType,
   type LastCompleted,
   type ScheduledRow,
@@ -157,6 +158,24 @@ export default function CalendarTab() {
   const daysInMonth = new Date(year, month + 1, 0).getDate();
   const monthLabel = monthCursor.toLocaleDateString('en-AU', { month: 'long', year: 'numeric' });
 
+  // Rolling capacity — how many scheduled inspections each person has in the
+  // month currently being viewed, across the currently toggled sites.
+  const workload = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const row of scheduled) {
+      if (!row.assigned_to) continue;
+      const d = parseLocalDate(row.scheduled_date);
+      if (d.getFullYear() !== year || d.getMonth() !== month) continue;
+      counts.set(row.assigned_to, (counts.get(row.assigned_to) ?? 0) + 1);
+    }
+    return Array.from(counts.entries())
+      .map(([userId, count]) => ({
+        email: users.find((u) => u.id === userId)?.email ?? 'Unknown',
+        count,
+      }))
+      .sort((a, b) => b.count - a.count);
+  }, [scheduled, users, year, month]);
+
   async function submitSchedule() {
     if (!formSiteId || !selectedDay) return;
     setSaving(true);
@@ -254,6 +273,19 @@ export default function CalendarTab() {
           ))}
         </div>
       </div>
+
+      {workload.length > 0 && (
+        <div className="flex flex-wrap gap-2">
+          {workload.map((w) => (
+            <span
+              key={w.email}
+              className="text-xs bg-rsl-navy/5 text-rsl-navy/70 px-3 py-1 rounded-full"
+            >
+              {w.email} — {w.count} this month
+            </span>
+          ))}
+        </div>
+      )}
 
       <div className="grid grid-cols-7 gap-1 text-xs text-rsl-navy/40 text-center">
         {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((d) => (
