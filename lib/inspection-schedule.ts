@@ -82,20 +82,37 @@ export async function fetchScheduled(
   return data ?? [];
 }
 
+// Plain calendar dates (no time-of-day, no timezone) need to be parsed and
+// formatted without ever going through toISOString()/UTC — that conversion
+// rolls back to the previous calendar day for any timezone ahead of UTC
+// (Brisbane is UTC+10 year-round), which is exactly the bug that showed up
+// as "click the 15th, see 2026-07-14" on the calendar.
+function parseLocalDate(dateStr: string): Date {
+  const [y, m, d] = dateStr.slice(0, 10).split('-').map(Number);
+  return new Date(y, m - 1, d);
+}
+
+function toLocalDateString(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
 // Projected next-due date from a last-completed date, or null if the site
 // has never had a completed inspection of that type (nothing to project from).
 export function projectNextDue(completedAt: string | null, type: InspectionType): string | null {
   if (!completedAt) return null;
-  const d = new Date(completedAt);
+  const d = parseLocalDate(completedAt);
   d.setDate(d.getDate() + TARGET_INTERVAL_DAYS[type]);
-  return d.toISOString().slice(0, 10);
+  return toLocalDateString(d);
 }
 
 export function isDueSoon(projectedDate: string | null): boolean {
   if (!projectedDate) return false;
   const today = new Date();
   today.setHours(0, 0, 0, 0);
-  const due = new Date(projectedDate);
+  const due = parseLocalDate(projectedDate);
   const daysUntil = Math.round((due.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
   return daysUntil <= DUE_SOON_LEAD_DAYS;
 }
@@ -104,5 +121,5 @@ export function isOverdue(projectedDate: string | null): boolean {
   if (!projectedDate) return false;
   const today = new Date();
   today.setHours(0, 0, 0, 0);
-  return new Date(projectedDate) < today;
+  return parseLocalDate(projectedDate) < today;
 }
