@@ -37,7 +37,10 @@ const STATUS_LABEL: Record<DayEvent['status'], string> = {
 };
 
 function toDateKey(d: Date): string {
-  return d.toISOString().slice(0, 10);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
 }
 
 export default function CalendarTab() {
@@ -291,6 +294,12 @@ export default function CalendarTab() {
         })}
       </div>
 
+      {!selectedDay && (
+        <p className="text-xs text-rsl-navy/40 text-center py-2">
+          Click a date to view details{canSchedule ? ' or schedule an inspection' : ''}.
+        </p>
+      )}
+
       {selectedDay && (
         <div className="bg-rsl-navy/5 rounded-xl p-4 space-y-3">
           <p className="text-sm font-semibold text-rsl-navy">{selectedDay}</p>
@@ -332,9 +341,9 @@ export default function CalendarTab() {
                   className="text-xs border border-rsl-navy/20 rounded-lg px-2 py-1.5"
                 >
                   <option value="">Select site…</option>
-                  {selectedSiteIds.map((id) => (
-                    <option key={id} value={id}>
-                      {siteName(id)}
+                  {sites.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.name}
                     </option>
                   ))}
                 </select>
