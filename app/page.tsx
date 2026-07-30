@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { supabaseServer } from '@/lib/supabase-server';
+import MyInspectionsList from '@/components/MyInspectionsList';
 
 export const dynamic = 'force-dynamic';
 
@@ -21,13 +22,14 @@ export default async function HomePage() {
     inspection_type: 'monthly' | 'sohc';
     scheduled_date: string;
     notes: string | null;
+    status: 'pending' | 'accepted' | 'declined';
   };
   let myUpcoming: MyScheduled[] = [];
   if (user) {
     const today = new Date().toISOString().slice(0, 10);
     const { data } = await supabase
       .from('scheduled_inspections')
-      .select('id, site_id, inspection_type, scheduled_date, notes')
+      .select('id, site_id, inspection_type, scheduled_date, notes, status')
       .eq('assigned_to', user.id)
       .gte('scheduled_date', today)
       .order('scheduled_date', { ascending: true });
@@ -57,27 +59,16 @@ export default async function HomePage() {
         </div>
       </header>
 
-      {myUpcoming.length > 0 && (
-        <section className="max-w-5xl mx-auto px-6 sm:px-10 pt-8">
-          <h2 className="font-display font-bold text-lg text-rsl-navy mb-1">My upcoming inspections</h2>
-          <div className="flex flex-col gap-2 mt-3">
-            {myUpcoming.map((row) => (
-              <div
-                key={row.id}
-                className="flex items-center justify-between border border-rsl-navy/10 rounded-xl px-4 py-3"
-              >
-                <div>
-                  <p className="text-sm font-semibold text-rsl-navy">
-                    {siteName(row.site_id)} — {row.inspection_type === 'monthly' ? 'Monthly Inspect' : 'SOHC'}
-                  </p>
-                  {row.notes && <p className="text-xs text-rsl-navy/50 mt-0.5">{row.notes}</p>}
-                </div>
-                <span className="text-sm text-rsl-navy/70 font-medium shrink-0 ml-3">{row.scheduled_date}</span>
-              </div>
-            ))}
-          </div>
-        </section>
-      )}
+      <MyInspectionsList
+        initialRows={myUpcoming.map((row) => ({
+          id: row.id,
+          siteName: siteName(row.site_id),
+          inspectionType: row.inspection_type,
+          scheduledDate: row.scheduled_date,
+          notes: row.notes,
+          status: row.status,
+        }))}
+      />
 
       <section className="max-w-5xl mx-auto px-6 sm:px-10 py-10">
         <h2 className="font-display font-bold text-lg text-rsl-navy mb-1">Select a site</h2>
