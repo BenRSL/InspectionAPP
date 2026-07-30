@@ -19,6 +19,8 @@ export type LastCompleted = {
   completedAt: string | null; // ISO date, or null if never completed
 };
 
+export type ScheduledStatus = 'pending' | 'accepted' | 'declined';
+
 export type ScheduledRow = {
   id: string;
   site_id: string;
@@ -28,6 +30,7 @@ export type ScheduledRow = {
   notes: string | null;
   created_by: string | null;
   created_at: string;
+  status: ScheduledStatus;
 };
 
 export async function fetchLastCompleted(
@@ -76,7 +79,7 @@ export async function fetchScheduled(
 ): Promise<ScheduledRow[]> {
   const { data } = await supabase
     .from('scheduled_inspections')
-    .select('id, site_id, inspection_type, scheduled_date, assigned_to, notes, created_by, created_at')
+    .select('id, site_id, inspection_type, scheduled_date, assigned_to, notes, created_by, created_at, status')
     .in('site_id', siteIds)
     .order('scheduled_date', { ascending: true });
   return data ?? [];
