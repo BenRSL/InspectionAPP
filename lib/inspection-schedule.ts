@@ -87,7 +87,7 @@ export async function fetchScheduled(
 // rolls back to the previous calendar day for any timezone ahead of UTC
 // (Brisbane is UTC+10 year-round), which is exactly the bug that showed up
 // as "click the 15th, see 2026-07-14" on the calendar.
-function parseLocalDate(dateStr: string): Date {
+export function parseLocalDate(dateStr: string): Date {
   const [y, m, d] = dateStr.slice(0, 10).split('-').map(Number);
   return new Date(y, m - 1, d);
 }
