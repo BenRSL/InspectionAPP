@@ -8,6 +8,7 @@ import ChipBankTab from '@/components/ChipBankTab';
 import AssetCostsTab from '@/components/AssetCostsTab';
 import InspectionHistoryTab from '@/components/InspectionHistoryTab';
 import CalendarTab from '@/components/CalendarTab';
+import TutorialTab from '@/components/TutorialTab';
 
 type Tab = 'sites' | 'areas' | 'users' | 'insights' | 'costs' | 'calendar' | 'chips' | 'history' | 'tutorial';
 
@@ -1053,34 +1054,9 @@ function UsersTab({
 
       <div className="mt-6 rounded-xl bg-rsl-navy/[0.03] p-4 text-xs text-rsl-navy/50">
         <strong className="text-rsl-navy/70">Permission reminder:</strong> God Mode can add/remove
-        sites, manage all users, and view the full audit log. Admins can edit checklist items on
-        their assigned sites and invite inspectors only. Inspectors can complete and submit
+        sites, manage all users, and edit anything. Admins can edit checklist items, the Chip Bank,
+        and Tutorial content, and schedule inspections. Inspectors can complete and submit
         inspections but can't edit site structure.
-      </div>
-    </div>
-  );
-}
-
-function TutorialTab() {
-  return (
-    <div>
-      <h2 className="font-display font-bold text-rsl-navy mb-1">Tutorial System</h2>
-      <p className="text-sm text-rsl-navy/50 mb-6">
-        Role-aware walkthroughs for Inspector, Admin, and God Mode. Editable here — no code required.
-      </p>
-
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-        {['Inspector', 'Admin', 'God Mode'].map((role) => (
-          <div key={role} className="border border-rsl-navy/10 rounded-xl p-4">
-            <div className="font-semibold text-rsl-navy text-sm mb-1">{role} Guide</div>
-            <p className="text-xs text-rsl-navy/50 mb-3">Step-by-step walkthrough for this role.</p>
-            <div className="flex gap-2">
-              <button className="text-xs font-semibold text-rsl-blue hover:underline">Edit</button>
-              <button className="text-xs font-semibold text-rsl-blue hover:underline">Download PDF</button>
-              <button className="text-xs font-semibold text-rsl-blue hover:underline">Email</button>
-            </div>
-          </div>
-        ))}
       </div>
     </div>
   );
