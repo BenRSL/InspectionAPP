@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { supabaseBrowser } from '@/lib/supabase-browser';
+import { parseLocalDate } from '@/lib/inspection-schedule';
 
 // Bible Section 8.6 — Inspection History + Delete (God Mode).
 // There was previously no browsable list of past inspections anywhere in
@@ -38,8 +39,7 @@ interface MonthlyInspectionRow {
   id: string;
   site_id: string;
   inspector_id: string;
-  month: number;
-  year: number;
+  period_month: string; // date, e.g. '2026-07-01' — represents July 2026
   status: Status;
   completed_at: string | null;
   created_at: string;
@@ -123,10 +123,9 @@ export default function InspectionHistoryTab() {
       if (type === 'monthly') {
         const { data, error } = await supabase
           .from('inspections')
-          .select('id, site_id, inspector_id, month, year, status, completed_at, created_at')
+          .select('id, site_id, inspector_id, period_month, status, completed_at, created_at')
           .eq('site_id', selectedSiteId)
-          .order('year', { ascending: false })
-          .order('month', { ascending: false });
+          .order('period_month', { ascending: false });
 
         if (cancelled) return;
         if (error) {
@@ -178,7 +177,10 @@ export default function InspectionHistoryTab() {
   }
 
   function periodLabel(row: MonthlyInspectionRow | HealthInspectionRow): string {
-    if ('month' in row) return `${MONTH_NAMES[row.month - 1] ?? row.month} ${row.year}`;
+    if ('period_month' in row) {
+      const d = parseLocalDate(row.period_month);
+      return `${MONTH_NAMES[d.getMonth()]} ${d.getFullYear()}`;
+    }
     return `${row.year} (annual)`;
   }
 
