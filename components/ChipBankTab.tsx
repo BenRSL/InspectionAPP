@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { supabaseBrowser } from '@/lib/supabase-browser';
-import { type Phrase, type ZoneTypeAssignment, buildZoneTypeIndex } from '@/lib/common-phrases';
+import { type Phrase, type ZoneTypeAssignment, buildZoneTypeIndex, normalizeZoneTypeName } from '@/lib/common-phrases';
 
 // comment_phrases.category isn't part of the shared Phrase type (Stage 1's
 // Inspector.tsx already splits cleaning/maintenance apart before it ever
@@ -98,12 +98,23 @@ export default function ChipBankTab() {
   // Any zone-type name that has at least one assignment but isn't in the
   // current structure list (renamed/deleted area or category) — still shown
   // so an admin notices and can clean it up, rather than it disappearing.
+  //
+  // A zone type is NOT orphaned just because its exact name isn't a real
+  // area/category — base-name anchors like "Advocacy" or "Office" are
+  // deliberate: they only ever match at runtime via normalizeZoneTypeName's
+  // number/parenthetical-stripping fallback (e.g. "Advocacy 1", "Advocacy 2"
+  // both normalize to "advocacy"). This check mirrors that exact fallback,
+  // so a base anchor with at least one real matching structure entry is
+  // correctly left unflagged.
   const orphanedZoneTypes = useMemo(() => {
     const structureKeys = new Set(structureZoneTypes.map((n) => n.toLowerCase()));
+    const structureBaseKeys = new Set(structureZoneTypes.map((n) => normalizeZoneTypeName(n)));
     const seen = new Map<string, string>();
     for (const a of assignments) {
-      const key = a.zone_type_name.trim().toLowerCase();
-      if (!structureKeys.has(key) && !seen.has(key)) seen.set(key, a.zone_type_name.trim());
+      const trimmed = a.zone_type_name.trim();
+      const key = trimmed.toLowerCase();
+      const isRealBase = structureBaseKeys.has(normalizeZoneTypeName(trimmed));
+      if (!structureKeys.has(key) && !isRealBase && !seen.has(key)) seen.set(key, trimmed);
     }
     return Array.from(seen.values());
   }, [assignments, structureZoneTypes]);
