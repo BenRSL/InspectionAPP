@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { supabaseServer } from '@/lib/supabase-server';
 import HealthInspector from '@/components/HealthInspector';
+import SiteNotes from '@/components/SiteNotes';
 import type { HealthCategory } from '@/lib/health';
 
 export const dynamic = 'force-dynamic';
@@ -66,6 +67,8 @@ export default async function SiteHealthPage({ params }: { params: { siteId: str
           </div>
         </div>
       </header>
+
+      <SiteNotes siteId={siteRow.id} />
 
       {hasData ? (
         <HealthInspector
