@@ -1,7 +1,8 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useMemo, useState } from 'react';
+import { Suspense, useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { supabaseBrowser } from '@/lib/supabase-browser';
 import StatsInsightsTab from '@/components/StatsInsightsTab';
 import ChipBankTab from '@/components/ChipBankTab';
@@ -55,8 +56,20 @@ function roleLabel(role: UserRole): string {
 }
 
 export default function AdminPage() {
+  return (
+    <Suspense fallback={null}>
+      <AdminPageInner />
+    </Suspense>
+  );
+}
+
+function AdminPageInner() {
+  const searchParams = useSearchParams();
   const supabase = useMemo(() => supabaseBrowser(), []);
-  const [tab, setTab] = useState<Tab>('sites');
+  const tabParam = searchParams.get('tab') as Tab | null;
+  const [tab, setTab] = useState<Tab>(tabParam ?? 'sites');
+  const crossLinkSiteId = searchParams.get('siteId') ?? undefined;
+  const crossLinkItemName = searchParams.get('itemName') ?? undefined;
 
   const [sites, setSites] = useState<SiteRow[]>([]);
   const [areas, setAreas] = useState<FloorAreaRow[]>([]);
@@ -187,7 +200,12 @@ export default function AdminPage() {
               )}
               {tab === 'insights' && <StatsInsightsTab />}
               {tab === 'chips' && <ChipBankTab />}
-              {tab === 'costs' && <AssetCostsTab />}
+              {tab === 'costs' && (
+                <AssetCostsTab
+                  initialSiteId={crossLinkSiteId}
+                  highlightItemName={crossLinkItemName}
+                />
+              )}
               {tab === 'calendar' && <CalendarTab />}
               {tab === 'history' && <InspectionHistoryTab />}
               {tab === 'tutorial' && <TutorialTab />}
