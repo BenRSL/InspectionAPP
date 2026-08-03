@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { supabaseBrowser } from '@/lib/supabase-browser';
 import type { HealthCondition, LifeExpectancyBand } from '@/lib/health';
 
@@ -59,6 +60,7 @@ function severityScore(row: FlagRow): number {
 
 export default function AssetLifecycleTab() {
   const supabase = useMemo(() => supabaseBrowser(), []);
+  const router = useRouter();
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -230,7 +232,7 @@ export default function AssetLifecycleTab() {
                       {row.site_name} · {row.category_name}
                     </p>
                   </div>
-                  <div className="flex gap-1.5 flex-wrap justify-end">
+                  <div className="flex gap-1.5 flex-wrap justify-end items-start">
                     <span
                       className="text-[10px] font-semibold uppercase tracking-wide rounded-full px-2 py-0.5 text-white"
                       style={{ backgroundColor: CONDITION_COLOR[row.condition] }}
@@ -240,6 +242,16 @@ export default function AssetLifecycleTab() {
                     <span className="text-[10px] font-semibold uppercase tracking-wide rounded-full px-2 py-0.5 text-rsl-navy/60 bg-rsl-navy/5">
                       {LIFE_LABEL[row.life_expectancy]} left
                     </span>
+                    <button
+                      onClick={() =>
+                        router.push(
+                          `/admin?tab=costs&siteId=${row.site_id}&itemName=${encodeURIComponent(row.item_name)}`
+                        )
+                      }
+                      className="text-[10px] font-semibold uppercase tracking-wide rounded-full px-2 py-0.5 text-rsl-blue border border-rsl-blue/30 hover:bg-rsl-blue/5"
+                    >
+                      Edit cost →
+                    </button>
                   </div>
                 </div>
 
