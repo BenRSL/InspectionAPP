@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { supabaseBrowser } from '@/lib/supabase-browser';
 import {
   fetchLastCompleted,
@@ -13,13 +14,14 @@ import {
   type ScheduledRow,
 } from '@/lib/inspection-schedule';
 
-type Site = { id: string; name: string };
+type Site = { id: string; name: string; slug: string };
 type UserOption = { id: string; email: string };
 
 type DayEvent = {
   type: InspectionType;
   status: 'done' | 'scheduled' | 'dueSoon' | 'projected';
   siteName: string;
+  siteSlug: string;
   scheduledRow?: ScheduledRow;
 };
 
@@ -46,6 +48,7 @@ function toDateKey(d: Date): string {
 
 export default function CalendarTab() {
   const supabase = useMemo(() => supabaseBrowser(), []);
+  const router = useRouter();
 
   const [sites, setSites] = useState<Site[]>([]);
   const [selectedSiteIds, setSelectedSiteIds] = useState<string[]>([]);
@@ -79,7 +82,7 @@ export default function CalendarTab() {
         setCanSchedule(profile?.role === 'admin' || profile?.role === 'god_mode');
       }
 
-      const { data: siteRows } = await supabase.from('sites').select('id, name').order('name');
+      const { data: siteRows } = await supabase.from('sites').select('id, name, slug').order('name');
       setSites(siteRows ?? []);
       if (siteRows && siteRows.length > 0) setSelectedSiteIds([siteRows[0].id]);
 
@@ -113,6 +116,7 @@ export default function CalendarTab() {
   }
 
   const siteName = (id: string) => sites.find((s) => s.id === id)?.name ?? 'Site';
+  const siteSlug = (id: string) => sites.find((s) => s.id === id)?.slug ?? '';
 
   // Build a map of date -> events, for the sites currently toggled on.
   const eventsByDay = useMemo(() => {
@@ -127,7 +131,12 @@ export default function CalendarTab() {
       for (const type of types) {
         const last = lastCompleted.find((l) => l.siteId === siteId && l.inspectionType === type);
         if (last?.completedAt) {
-          push(last.completedAt.slice(0, 10), { type, status: 'done', siteName: siteName(siteId) });
+          push(last.completedAt.slice(0, 10), {
+            type,
+            status: 'done',
+            siteName: siteName(siteId),
+            siteSlug: siteSlug(siteId),
+          });
         }
         const projected = projectNextDue(last?.completedAt ?? null, type);
         if (projected) {
@@ -135,6 +144,7 @@ export default function CalendarTab() {
             type,
             status: isDueSoon(projected) ? 'dueSoon' : 'projected',
             siteName: siteName(siteId),
+            siteSlug: siteSlug(siteId),
           });
         }
       }
@@ -145,6 +155,7 @@ export default function CalendarTab() {
         type: row.inspection_type,
         status: 'scheduled',
         siteName: siteName(row.site_id),
+        siteSlug: siteSlug(row.site_id),
         scheduledRow: row,
       });
     }
@@ -447,8 +458,10 @@ export default function CalendarTab() {
           const isSelected = selectedDay === dateKey;
           const scheduledHere = dayEvents.filter((ev) => ev.scheduledRow).map((ev) => ev.scheduledRow!);
           const dragSource = scheduledHere.length === 1 ? scheduledHere[0] : null;
+          const visibleEvents = dayEvents.slice(0, 2);
+          const overflowCount = dayEvents.length - visibleEvents.length;
           return (
-            <button
+            <div
               key={day}
               onClick={() => setSelectedDay(dateKey)}
               draggable={canSchedule && !!dragSource}
@@ -464,23 +477,29 @@ export default function CalendarTab() {
                 const id = e.dataTransfer.getData('text/plain');
                 if (id) rescheduleRow(id, dateKey);
               }}
-              className={`relative aspect-square border rounded-lg text-xs text-rsl-navy/70 flex items-start justify-start p-1 ${
+              className={`min-h-[72px] border rounded-lg text-xs text-rsl-navy/70 flex flex-col items-start p-1 gap-0.5 cursor-pointer ${
                 isSelected ? 'border-rsl-blue' : 'border-rsl-navy/10'
               } ${canSchedule && dragSource ? 'cursor-grab' : ''}`}
             >
-              {day}
-              {dayEvents.length > 0 && (
-                <span className="absolute bottom-1 right-1 flex gap-0.5">
-                  {dayEvents.slice(0, 3).map((ev, i) => (
-                    <span
-                      key={i}
-                      className="inline-block w-1.5 h-1.5 rounded-full"
-                      style={{ background: STATUS_COLOR[ev.status] }}
-                    />
-                  ))}
-                </span>
+              <span>{day}</span>
+              {visibleEvents.map((ev, i) => (
+                <button
+                  key={i}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    router.push(`/sites/${ev.siteSlug}${ev.type === 'sohc' ? '/health' : ''}`);
+                  }}
+                  title={`${ev.siteName} — ${ev.type === 'monthly' ? 'Monthly Inspect' : 'SOHC'} — ${STATUS_LABEL[ev.status]}. Click to open.`}
+                  className="w-full text-left text-[10px] font-semibold text-white rounded px-1.5 py-0.5 truncate hover:opacity-80"
+                  style={{ background: STATUS_COLOR[ev.status] }}
+                >
+                  {ev.siteName}
+                </button>
+              ))}
+              {overflowCount > 0 && (
+                <span className="text-[10px] text-rsl-navy/40">+{overflowCount} more</span>
               )}
-            </button>
+            </div>
           );
         })}
       </div>
