@@ -31,13 +31,20 @@ interface ItemRow {
 
 type SaveStatus = 'idle' | 'saving' | 'saved' | 'error';
 
-export default function AssetCostsTab() {
+export default function AssetCostsTab({
+  initialSiteId,
+  highlightItemName,
+}: {
+  initialSiteId?: string;
+  highlightItemName?: string;
+} = {}) {
   const supabase = useMemo(() => supabaseBrowser(), []);
 
   const [sites, setSites] = useState<SiteRow[]>([]);
-  const [selectedSiteId, setSelectedSiteId] = useState<string>('');
+  const [selectedSiteId, setSelectedSiteId] = useState<string>(initialSiteId ?? '');
   const [categories, setCategories] = useState<CategoryRow[]>([]);
   const [items, setItems] = useState<ItemRow[]>([]);
+  const highlightedRowRef = useRef<HTMLTableRowElement | null>(null);
 
   const [loadingSites, setLoadingSites] = useState(true);
   const [loadingItems, setLoadingItems] = useState(false);
@@ -106,6 +113,14 @@ export default function AssetCostsTab() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedSiteId]);
+
+  useEffect(() => {
+    if (!highlightItemName || items.length === 0) return;
+    const timer = setTimeout(() => {
+      highlightedRowRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }, 100);
+    return () => clearTimeout(timer);
+  }, [items, highlightItemName]);
 
   async function saveItem(itemId: string, patch: Partial<Pick<ItemRow, 'replacement_cost' | 'cost_confidence'>>) {
     setSaveStatus('saving');
@@ -191,39 +206,47 @@ export default function AssetCostsTab() {
             <tbody>
               {categories.map((category) => {
                 const categoryItems = items.filter((it) => it.category_id === category.id);
-                return categoryItems.map((item, index) => (
-                  <tr key={item.id} className="border-t border-rsl-navy/5">
-                    <td className="px-4 py-2 text-rsl-navy/70 whitespace-nowrap">
-                      {index === 0 ? category.category_name : ''}
-                    </td>
-                    <td className="px-4 py-2 text-rsl-navy">{item.item_name}</td>
-                    <td className="px-4 py-2">
-                      <div className="flex items-center gap-1">
-                        <span className="text-rsl-navy/40">$</span>
-                        <input
-                          type="number"
-                          min="0"
-                          step="0.01"
-                          value={item.replacement_cost ?? ''}
-                          onChange={(e) => updateCost(item.id, e.target.value)}
-                          placeholder="—"
-                          className="w-24 text-sm rounded-lg border border-rsl-navy/15 px-2 py-1.5 text-rsl-navy"
-                        />
-                      </div>
-                    </td>
-                    <td className="px-4 py-2">
-                      <select
-                        value={item.cost_confidence ?? ''}
-                        onChange={(e) => updateConfidence(item.id, e.target.value as CostConfidence | '')}
-                        className="text-sm rounded-lg border border-rsl-navy/15 px-2 py-1.5 text-rsl-navy"
-                      >
-                        <option value="">—</option>
-                        <option value="estimated">Estimated</option>
-                        <option value="quoted">Quoted</option>
-                      </select>
-                    </td>
-                  </tr>
-                ));
+                return categoryItems.map((item, index) => {
+                  const isHighlighted =
+                    !!highlightItemName && item.item_name.toLowerCase() === highlightItemName.toLowerCase();
+                  return (
+                    <tr
+                      key={item.id}
+                      ref={isHighlighted ? highlightedRowRef : undefined}
+                      className={`border-t border-rsl-navy/5 ${isHighlighted ? 'bg-rsl-gold/10' : ''}`}
+                    >
+                      <td className="px-4 py-2 text-rsl-navy/70 whitespace-nowrap">
+                        {index === 0 ? category.category_name : ''}
+                      </td>
+                      <td className="px-4 py-2 text-rsl-navy">{item.item_name}</td>
+                      <td className="px-4 py-2">
+                        <div className="flex items-center gap-1">
+                          <span className="text-rsl-navy/40">$</span>
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            value={item.replacement_cost ?? ''}
+                            onChange={(e) => updateCost(item.id, e.target.value)}
+                            placeholder="—"
+                            className="w-24 text-sm rounded-lg border border-rsl-navy/15 px-2 py-1.5 text-rsl-navy"
+                          />
+                        </div>
+                      </td>
+                      <td className="px-4 py-2">
+                        <select
+                          value={item.cost_confidence ?? ''}
+                          onChange={(e) => updateConfidence(item.id, e.target.value as CostConfidence | '')}
+                          className="text-sm rounded-lg border border-rsl-navy/15 px-2 py-1.5 text-rsl-navy"
+                        >
+                          <option value="">—</option>
+                          <option value="estimated">Estimated</option>
+                          <option value="quoted">Quoted</option>
+                        </select>
+                      </td>
+                    </tr>
+                  );
+                });
               })}
               {items.length === 0 && (
                 <tr>
