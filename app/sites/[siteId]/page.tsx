@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { supabaseServer } from '@/lib/supabase-server';
 import Inspector from '@/components/Inspector';
+import SiteNotes from '@/components/SiteNotes';
 import type { Site, Floor } from '@/lib/sites';
 
 export const dynamic = 'force-dynamic';
@@ -87,6 +88,8 @@ export default async function SiteInspectionPage({ params }: { params: { siteId:
           </Link>
         </div>
       </header>
+
+      <SiteNotes siteId={siteRow.id} />
 
       {hasData ? (
         <Inspector
