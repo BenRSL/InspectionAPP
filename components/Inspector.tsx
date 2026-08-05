@@ -335,13 +335,34 @@ export default function Inspector({
     })();
   }, [pct, loading, supabase, siteDbId, monthlyOnboardingRemaining]);
 
-  function floorStatus(floorId: string): 'not-started' | 'has-fails' | 'done' {
+  // Each checklist item is single-category (a 'cleaning' row and a 'maintenance'
+  // row per area, never both on the same item — see addAreaToFloor's "standard
+  // two-item shape" comment). So "is this item assessed" must check ONLY the
+  // field matching that item's own category, never both fields on one item —
+  // the other field is simply not applicable and stays null forever. This
+  // mirrors the proven-correct pattern already used for the per-area
+  // "Area Complete ✓" badge below (see the allAssessed calc in AreaCard).
+  function floorItemPairs(floorId: string) {
     const floor = floors.find((f) => f.id === floorId);
-    if (!floor) return 'not-started';
-    const items = floor.areas.flatMap((a) => a.items.map((it) => areaState[a.id]?.items[it.id]));
-    const anyFail = items.some((it) => it?.cleaningPass === false || it?.maintenancePass === false);
-    const anyAssessed = items.some((it) => it?.cleaningPass !== null || it?.maintenancePass !== null);
-    const allAssessed = items.every((it) => it?.cleaningPass !== null && it?.maintenancePass !== null);
+    if (!floor) return [];
+    return floor.areas.flatMap((a) =>
+      a.items.map((it) => ({ item: it, state: areaState[a.id]?.items[it.id] }))
+    );
+  }
+
+  function isItemAssessed(item: { category: ItemCategory }, state: ItemState | undefined): boolean {
+    return item.category === 'cleaning' ? state?.cleaningPass !== null : state?.maintenancePass !== null;
+  }
+
+  function isItemFailed(item: { category: ItemCategory }, state: ItemState | undefined): boolean {
+    return item.category === 'cleaning' ? state?.cleaningPass === false : state?.maintenancePass === false;
+  }
+
+  function floorStatus(floorId: string): 'not-started' | 'has-fails' | 'done' {
+    const pairs = floorItemPairs(floorId);
+    const anyFail = pairs.some(({ item, state }) => isItemFailed(item, state));
+    const anyAssessed = pairs.some(({ item, state }) => isItemAssessed(item, state));
+    const allAssessed = pairs.every(({ item, state }) => isItemAssessed(item, state));
     if (anyFail) return 'has-fails';
     if (allAssessed && anyAssessed) return 'done';
     return 'not-started';
@@ -351,20 +372,16 @@ export default function Inspector({
   // fails can still be "complete" (every item assessed one way or the other), and
   // that's what Next Floor navigation and the per-floor % badge care about.
   function isFloorComplete(floorId: string): boolean {
-    const floor = floors.find((f) => f.id === floorId);
-    if (!floor) return false;
-    const items = floor.areas.flatMap((a) => a.items.map((it) => areaState[a.id]?.items[it.id]));
-    if (items.length === 0) return false;
-    return items.every((it) => it?.cleaningPass !== null && it?.maintenancePass !== null);
+    const pairs = floorItemPairs(floorId);
+    if (pairs.length === 0) return false;
+    return pairs.every(({ item, state }) => isItemAssessed(item, state));
   }
 
   function floorPct(floorId: string): number {
-    const floor = floors.find((f) => f.id === floorId);
-    if (!floor) return 0;
-    const items = floor.areas.flatMap((a) => a.items.map((it) => areaState[a.id]?.items[it.id]));
-    if (items.length === 0) return 0;
-    const done = items.filter((it) => it?.cleaningPass !== null && it?.maintenancePass !== null).length;
-    return Math.round((done / items.length) * 100);
+    const pairs = floorItemPairs(floorId);
+    if (pairs.length === 0) return 0;
+    const done = pairs.filter(({ item, state }) => isItemAssessed(item, state)).length;
+    return Math.round((done / pairs.length) * 100);
   }
 
   // Next incomplete floor after the current one, wrapping around to the start —
