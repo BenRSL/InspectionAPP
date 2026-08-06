@@ -86,6 +86,11 @@ export default function Inspector({
   const [inspectionCompletedAt, setInspectionCompletedAt] = useState<string | null>(null);
   const [clearBusy, setClearBusy] = useState(false);
   const [clearError, setClearError] = useState<string | null>(null);
+  // Surfaced from addPhrase/renamePhrase/deletePhrase below — previously these
+  // three swallowed every DB error silently (no setActionError-equivalent, unlike
+  // ChipBankTab's identical add/rename/delete), so any failure just looked like
+  // nothing happened at all when a chip was added/renamed/deleted mid-inspection.
+  const [phraseError, setPhraseError] = useState<string | null>(null);
 
   const [phrases, setPhrases] = useState<{ cleaning: Phrase[]; maintenance: Phrase[] }>({
     cleaning: [],
@@ -869,32 +874,48 @@ export default function Inspector({
     const existing = phrases[category];
     if (existing.some((p) => p.text.toLowerCase() === trimmed.toLowerCase())) return; // already there
 
+    setPhraseError(null);
     const { data, error } = await supabase
       .from('comment_phrases')
       .insert({ category, text: trimmed })
       .select('id, category, text, keywords')
       .single();
 
-    if (!error && data) {
-      setPhrases((prev) => ({ ...prev, [category]: [...prev[category], data] }));
+    if (error || !data) {
+      setPhraseError(`Couldn't add "${trimmed}": ${error?.message ?? 'unknown error'}`);
+      return;
     }
+    setPhrases((prev) => ({ ...prev, [category]: [...prev[category], data] }));
   }
 
   async function renamePhrase(category: ItemCategory, id: string, text: string) {
     const trimmed = text.trim();
     if (!trimmed) return;
 
+    const previous = phrases[category];
+    setPhraseError(null);
     setPhrases((prev) => ({
       ...prev,
       [category]: prev[category].map((p) => (p.id === id ? { ...p, text: trimmed } : p)),
     }));
 
-    await supabase.from('comment_phrases').update({ text: trimmed }).eq('id', id);
+    const { error } = await supabase.from('comment_phrases').update({ text: trimmed }).eq('id', id);
+    if (error) {
+      setPhrases((prev) => ({ ...prev, [category]: previous })); // roll back the optimistic rename
+      setPhraseError(`Couldn't rename that phrase: ${error.message}`);
+    }
   }
 
   async function deletePhrase(category: ItemCategory, id: string) {
+    const previous = phrases[category];
+    setPhraseError(null);
     setPhrases((prev) => ({ ...prev, [category]: prev[category].filter((p) => p.id !== id) }));
-    await supabase.from('comment_phrases').delete().eq('id', id);
+
+    const { error } = await supabase.from('comment_phrases').delete().eq('id', id);
+    if (error) {
+      setPhrases((prev) => ({ ...prev, [category]: previous })); // roll back the optimistic delete
+      setPhraseError(`Couldn't delete that phrase: ${error.message}`);
+    }
   }
 
   const activeFloor = floors.find((f) => f.id === activeFloorId);
@@ -965,6 +986,14 @@ export default function Inspector({
       {clearError && (
         <div className="mt-3 rounded-xl bg-rsl-red/5 border border-rsl-red/20 p-3 text-sm text-rsl-red">
           {clearError}
+        </div>
+      )}
+      {phraseError && (
+        <div className="mt-3 rounded-xl bg-rsl-red/5 border border-rsl-red/20 p-3 text-sm text-rsl-red flex items-start justify-between gap-3">
+          <span>{phraseError}</span>
+          <button onClick={() => setPhraseError(null)} className="text-rsl-red/60 shrink-0">
+            ✕
+          </button>
         </div>
       )}
 
