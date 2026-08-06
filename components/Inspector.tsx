@@ -868,7 +868,7 @@ export default function Inspector({
   // can use this, not gated by the zone/item edit lock, since it's just wording
   // suggestions rather than structural inspection data. ----
 
-  async function addPhrase(category: ItemCategory, text: string) {
+  async function addPhrase(category: ItemCategory, text: string, zoneTypeName: string) {
     const trimmed = text.trim();
     if (!trimmed) return;
     const existing = phrases[category];
@@ -886,6 +886,21 @@ export default function Inspector({
       return;
     }
     setPhrases((prev) => ({ ...prev, [category]: [...prev[category], data] }));
+
+    // Self-curate to the zone it was added from, so it shows as a chip here
+    // immediately and on every future inspection of this zone — not just
+    // this comment. Deliberately non-blocking: the phrase itself is already
+    // saved above, so a curation failure here (e.g. a stale RLS policy)
+    // shouldn't be reported as if the whole add failed — it can still be
+    // pinned manually via Chip Bank.
+    const { data: curationRow, error: curationErr } = await supabase
+      .from('comment_phrase_zone_types')
+      .insert({ phrase_id: data.id, zone_type_name: zoneTypeName })
+      .select('id, phrase_id, zone_type_name')
+      .single();
+    if (!curationErr && curationRow) {
+      setZoneTypeAssignments((prev) => [...prev, curationRow]);
+    }
   }
 
   async function renamePhrase(category: ItemCategory, id: string, text: string) {
@@ -1439,7 +1454,7 @@ function AreaCard({
   photoUploadState?: Record<string, { busy: boolean; error: string | null }>;
   phrases?: { cleaning: Phrase[]; maintenance: Phrase[] };
   zoneTypeIndex: Map<string, Set<string>>;
-  onAddPhrase?: (category: ItemCategory, text: string) => void;
+  onAddPhrase?: (category: ItemCategory, text: string, zoneTypeName: string) => void;
   onRenamePhrase?: (category: ItemCategory, id: string, text: string) => void;
   onDeletePhrase?: (category: ItemCategory, id: string) => void;
 }) {
@@ -1555,7 +1570,7 @@ function AreaCard({
             photoError={photoUploadState[cleaningItem.id]?.error ?? null}
             phrases={phrases.cleaning}
             zoneTypeIndex={zoneTypeIndex}
-            onAddPhrase={onAddPhrase ? (text) => onAddPhrase('cleaning', text) : undefined}
+            onAddPhrase={onAddPhrase ? (text) => onAddPhrase('cleaning', text, areaName) : undefined}
             onRenamePhrase={onRenamePhrase ? (id, text) => onRenamePhrase('cleaning', id, text) : undefined}
             onDeletePhrase={onDeletePhrase ? (id) => onDeletePhrase('cleaning', id) : undefined}
           />
@@ -1587,7 +1602,7 @@ function AreaCard({
             photoError={photoUploadState[maintenanceItem.id]?.error ?? null}
             phrases={phrases.maintenance}
             zoneTypeIndex={zoneTypeIndex}
-            onAddPhrase={onAddPhrase ? (text) => onAddPhrase('maintenance', text) : undefined}
+            onAddPhrase={onAddPhrase ? (text) => onAddPhrase('maintenance', text, areaName) : undefined}
             onRenamePhrase={onRenamePhrase ? (id, text) => onRenamePhrase('maintenance', id, text) : undefined}
             onDeletePhrase={onDeletePhrase ? (id) => onDeletePhrase('maintenance', id) : undefined}
           />
