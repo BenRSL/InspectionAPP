@@ -64,11 +64,23 @@ export default function PhraseChips({
       )
     : [];
 
+  const [justAdded, setJustAdded] = useState<string | null>(null);
+
   function submitNewPhrase() {
     const trimmed = newPhraseText.trim();
     if (!trimmed || !onAddPhrase) return;
     onAddPhrase(trimmed);
+    // A brand-new phrase has no comment_phrase_zone_types curation yet, so
+    // isPhraseRelevant() won't show it as a chip here (or anywhere) until an
+    // admin pins it in Chip Bank — without this, it saves correctly but
+    // looks like it silently vanished. Applying it straight to the comment
+    // gets the inspector the outcome they actually wanted right now.
+    if (!segments.includes(trimmed)) {
+      onSelect([...segments, trimmed].join(', '));
+    }
     setNewPhraseText('');
+    setJustAdded(trimmed);
+    setTimeout(() => setJustAdded(null), 4000);
   }
 
   function submitRename(id: string) {
@@ -193,6 +205,12 @@ export default function PhraseChips({
       {editMode && phrases.length >= MAX_PHRASES_PER_CATEGORY && (
         <p className="text-[10px] text-rsl-gold">
           {phrases.length} phrases in this list — consider removing one you don't need to keep it scannable.
+        </p>
+      )}
+      {justAdded && (
+        <p className="text-[10px] text-pass">
+          Added "{justAdded}" to the comment above and saved it to the shared phrase bank. It won't show as a chip
+          here automatically yet — an admin can pin it to this zone in Chip Bank so it does next time.
         </p>
       )}
 
