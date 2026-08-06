@@ -47,11 +47,15 @@ export default function ChipBankTab() {
   const [hoveredZoneType, setHoveredZoneType] = useState<string | null>(null);
   const bucketRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
-  // Brief "✓ Saved" confirmation after a chip assignment actually confirms
-  // against the DB (not just the optimistic drop) — previously a successful
-  // assignment gave no positive feedback at all, only errors were visible.
-  const [savedFlashZoneType, setSavedFlashZoneType] = useState<string | null>(null);
+  // Brief "✓ Saved" confirmation next to a bucket header once an assignment
+  // genuinely confirms against the database — not on the optimistic drop.
+  const [justSavedZoneType, setJustSavedZoneType] = useState<string | null>(null);
   const savedFlashTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  function flashSaved(zoneType: string) {
+    setJustSavedZoneType(zoneType);
+    if (savedFlashTimer.current) clearTimeout(savedFlashTimer.current);
+    savedFlashTimer.current = setTimeout(() => setJustSavedZoneType(null), 2000);
+  }
 
   // Phrase text management (add/rename/delete) — mirrors the exact same
   // functions in Inspector.tsx's pencil-icon editor, now also available
@@ -68,17 +72,17 @@ export default function ChipBankTab() {
     setLoading(true);
     setLoadError(null);
 
-    // comment_phrase_zone_types now holds ~2,000 rows — past Supabase's default
-    // 1000-row Data API cap. A plain .select() here silently truncates, which is
-    // exactly why newly-dropped chips were vanishing on reload: anything past
-    // row 1000 (including whatever was just inserted) simply wasn't in the
-    // result. fetchAllZoneTypeAssignments pages through with .range() to get
-    // everything, same fix already applied in Inspector.tsx / HealthInspector.tsx.
-    const [phrasesRes, allAssignments, areasRes, categoriesRes] = await Promise.all([
+    // comment_phrase_zone_types is well past Supabase's default 1000-row Data
+    // API cap (see fetchAllZoneTypeAssignments in lib/common-phrases.ts), so it
+    // must be paginated like every other reader of this table (Inspector.tsx,
+    // HealthInspector.tsx) — a plain .select() here silently truncates and was
+    // the root cause of chips "vanishing" after a reload. Fetched separately
+    // from the Promise.all below since it doesn't return a {data,error} shape.
+    const [phrasesRes, areasRes, categoriesRes, assignmentsData] = await Promise.all([
       supabase.from('comment_phrases').select('id, category, text, keywords').order('text'),
-      fetchAllZoneTypeAssignments(supabase),
       supabase.from('floor_areas').select('area_name'),
       supabase.from('health_categories').select('category_name'),
+      fetchAllZoneTypeAssignments(supabase),
     ]);
 
     const firstError = phrasesRes.error || areasRes.error || categoriesRes.error;
@@ -89,7 +93,7 @@ export default function ChipBankTab() {
     }
 
     setPhrases(phrasesRes.data ?? []);
-    setAssignments(allAssignments);
+    setAssignments(assignmentsData);
 
     // Dedupe case-insensitively across both sources, keep first-seen casing.
     const seen = new Map<string, string>();
@@ -109,12 +113,6 @@ export default function ChipBankTab() {
   useEffect(() => {
     loadAll();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  useEffect(() => {
-    return () => {
-      if (savedFlashTimer.current) clearTimeout(savedFlashTimer.current);
-    };
   }, []);
 
   const zoneTypeIndex = useMemo(() => buildZoneTypeIndex(assignments), [assignments]);
@@ -179,16 +177,37 @@ export default function ChipBankTab() {
       .single();
 
     if (error || !data) {
+      // 23505 = unique_violation. This isn't a real failure — it means the row
+      // already exists (most commonly because an inspector self-curated this
+      // exact phrase/zone pair from Inspector.tsx after this tab's initial
+      // load, per Bible 2.4/2.5). The desired end state — this chip assigned
+      // to this zone — is already true, so quietly fetch and merge the real
+      // row instead of surfacing a raw Postgres error for a no-op.
+      if (error?.code === '23505') {
+        const { data: existing } = await supabase
+          .from('comment_phrase_zone_types')
+          .select('id, phrase_id, zone_type_name')
+          .eq('phrase_id', phraseId)
+          .ilike('zone_type_name', zoneType)
+          .maybeSingle();
+
+        setAssignments((prev) => {
+          const withoutOptimistic = prev.filter((a) => a.id !== optimisticRow.id);
+          if (!existing) return withoutOptimistic; // shouldn't happen, but don't fabricate a row
+          const alreadyPresent = withoutOptimistic.some((a) => a.id === existing.id);
+          return alreadyPresent ? withoutOptimistic : [...withoutOptimistic, existing];
+        });
+        flashSaved(zoneType);
+        return;
+      }
+
       setAssignments((prev) => prev.filter((a) => a.id !== optimisticRow.id));
       setActionError(`Couldn't assign that chip: ${error?.message ?? 'unknown error'}`);
       return;
     }
 
     setAssignments((prev) => prev.map((a) => (a.id === optimisticRow.id ? data : a)));
-
-    if (savedFlashTimer.current) clearTimeout(savedFlashTimer.current);
-    setSavedFlashZoneType(zoneType);
-    savedFlashTimer.current = setTimeout(() => setSavedFlashZoneType(null), 1600);
+    flashSaved(zoneType);
   }
 
   async function unassign(assignment: ZoneTypeAssignment) {
@@ -432,13 +451,13 @@ export default function ChipBankTab() {
                 >
                   <div className="flex items-center gap-2 mb-1.5">
                     <span className="text-sm font-semibold text-rsl-navy">{zoneType}</span>
+                    {justSavedZoneType === zoneType && (
+                      <span className="text-[10px] font-semibold text-pass">✓ Saved</span>
+                    )}
                     {isOrphaned && (
                       <span className="text-[10px] font-semibold uppercase tracking-wide text-rsl-gold bg-rsl-gold/10 rounded-full px-2 py-0.5">
                         No matching area/category
                       </span>
-                    )}
-                    {savedFlashZoneType === zoneType && (
-                      <span className="text-[10px] font-semibold text-pass animate-pulse">✓ Saved</span>
                     )}
                   </div>
                   <div className="flex flex-wrap gap-1.5 min-h-[1.75rem]">
