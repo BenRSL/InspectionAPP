@@ -4,6 +4,8 @@ import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { supabaseBrowser } from '@/lib/supabase-browser';
 import type { HealthCategory, HealthCondition, LifeExpectancyBand } from '@/lib/health';
 import { CONDITION_OPTIONS, LIFE_EXPECTANCY_OPTIONS, computeRequiresAttention } from '@/lib/health';
+import { type Phrase, type ZoneTypeAssignment, buildZoneTypeIndex, fetchAllZoneTypeAssignments } from '@/lib/common-phrases';
+import PhraseChips from '@/components/PhraseChips';
 
 type SaveStatus = 'idle' | 'saving' | 'saved' | 'error';
 
@@ -78,9 +80,26 @@ export default function HealthInspector({
     return init;
   });
 
+  // Comment chip bank — SOHC shares the exact same comment_phrases pool and
+  // curated zone-type assignments as Stage 1 (Bible Section 8.2). Unlike
+  // Stage 1 there's no cleaning/maintenance split here, so all phrases load
+  // as one flat list; relevance for a given item is decided by its
+  // category name (e.g. "Roof & External Envelope") against the same
+  // zoneTypeIndex Stage 1 uses. Phrase bank management (add/rename/delete)
+  // stays in Stage 1's UI and the admin Chip Bank screen — SOHC only selects.
+  const [phrases, setPhrases] = useState<Phrase[]>([]);
+  const [zoneTypeAssignments, setZoneTypeAssignments] = useState<ZoneTypeAssignment[]>([]);
+  const zoneTypeIndex = useMemo(() => buildZoneTypeIndex(zoneTypeAssignments), [zoneTypeAssignments]);
+
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle');
+  // The real Postgres/network error behind a failed save — previously
+  // discarded entirely, so "Save failed — check connection" was shown even
+  // when the actual cause had nothing to do with connectivity (e.g. a
+  // constraint violation). Kept per-item so a retry can re-attempt exactly
+  // the row that failed rather than requiring the inspector to re-touch it.
+  const [itemSaveErrors, setItemSaveErrors] = useState<Record<string, string>>({});
   const [photoUploadState, setPhotoUploadState] = useState<
     Record<string, { busy: boolean; error: string | null }>
   >({});
@@ -88,7 +107,7 @@ export default function HealthInspector({
   const [inspectionStatus, setInspectionStatus] = useState<'in_progress' | 'completed' | null>(null);
   const [clearBusy, setClearBusy] = useState(false);
   const [clearError, setClearError] = useState<string | null>(null);
-  const [reportBusy, setReportBusy] = useState<'download' | 'email' | null>(null);
+  const [reportBusy, setReportBusy] = useState<'download' | 'email' | 'excel' | null>(null);
   const [reportMessage, setReportMessage] = useState<string | null>(null);
 
   const inspectionIdRef = useRef<string | null>(null);
@@ -176,6 +195,26 @@ export default function HealthInspector({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [siteDbId]);
 
+  // ---- Load the shared comment phrase bank + curated zone-type assignments
+  // once on mount. Independent of the inspection load above — same
+  // comment_phrases / comment_phrase_zone_types tables Stage 1 uses, just
+  // loaded flat (no cleaning/maintenance split) since SOHC doesn't have that axis. ----
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const [phrasesRes, assignments] = await Promise.all([
+        supabase.from('comment_phrases').select('id, category, text, keywords').order('text'),
+        fetchAllZoneTypeAssignments(supabase),
+      ]);
+      if (!cancelled && phrasesRes.data) setPhrases(phrasesRes.data);
+      if (!cancelled) setZoneTypeAssignments(assignments);
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const allItems = categoriesState.flatMap((c) => c.items);
   const totalItems = allItems.length;
   // An item counts as "assessed" once both condition and life expectancy are set —
@@ -215,10 +254,30 @@ export default function HealthInspector({
 
     pendingSaves.current -= 1;
     if (error) {
+      // Logged rather than silently discarded, so a real cause (constraint
+      // violation, RLS, etc.) is visible in the browser console instead of
+      // being indistinguishable from a genuine network drop.
+      console.error(`SOHC save failed for item ${itemId}:`, error);
       setSaveStatus('error');
+      setItemSaveErrors((prev) => ({ ...prev, [itemId]: error.message }));
     } else if (pendingSaves.current === 0) {
       setSaveStatus('saved');
+      setItemSaveErrors((prev) => {
+        if (!(itemId in prev)) return prev;
+        const next = { ...prev };
+        delete next[itemId];
+        return next;
+      });
     }
+  }
+
+  // Manual retry for an item whose last save failed — re-sends its current
+  // in-memory state rather than requiring the inspector to re-touch the
+  // control that triggered the original save.
+  function retryItemSave(itemId: string) {
+    const state = itemState[itemId];
+    if (!state) return;
+    saveItem(itemId, state);
   }
 
   function setItem(itemId: string, patch: Partial<ItemState>) {
@@ -435,6 +494,33 @@ export default function HealthInspector({
       setTimeout(() => URL.revokeObjectURL(url), 30000);
     } catch (err) {
       newTab?.close();
+      setReportMessage(err instanceof Error ? err.message : 'Download failed');
+    } finally {
+      setReportBusy(null);
+    }
+  }
+
+  // Excel doesn't need the popup-blocker dance downloadReport uses — the
+  // response's Content-Disposition: attachment header makes the browser
+  // download it directly, so a plain anchor click is enough.
+  async function downloadExcel() {
+    const inspectionId = inspectionIdRef.current;
+    if (!inspectionId) return;
+    setReportBusy('excel');
+    setReportMessage(null);
+    try {
+      const res = await fetch(`/api/reports/health/${inspectionId}/xlsx`);
+      if (!res.ok) throw new Error('Could not generate the spreadsheet');
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${siteName.replace(/[^a-z0-9]+/gi, '-')}-sohc-report-${currentYear()}.xlsx`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 30000);
+    } catch (err) {
       setReportMessage(err instanceof Error ? err.message : 'Download failed');
     } finally {
       setReportBusy(null);
@@ -1017,6 +1103,7 @@ export default function HealthInspector({
             >
               <HealthItemCard
                 itemName={item.name}
+                categoryName={activeCategory.name}
                 state={itemState[item.id]}
                 onChange={(patch) => setItem(item.id, patch)}
                 onUploadPhoto={(file) => uploadPhoto(item.id, file)}
@@ -1024,6 +1111,8 @@ export default function HealthInspector({
                 resolvePhotoUrl={resolvePhotoUrl}
                 photoBusy={photoUploadState[item.id]?.busy ?? false}
                 photoError={photoUploadState[item.id]?.error ?? null}
+                saveError={itemSaveErrors[item.id] ?? null}
+                onRetrySave={() => retryItemSave(item.id)}
                 editable={canEditStructure}
                 isEditingName={editingItemId === item.id}
                 editingName={editingItemName}
@@ -1035,6 +1124,8 @@ export default function HealthInspector({
                 deleteBusy={structureBusy}
                 isDragging={draggingItemId === item.id}
                 onDragHandlePointerDown={() => startDragItem(activeCategory.id, item.id)}
+                phrases={phrases}
+                zoneTypeIndex={zoneTypeIndex}
               />
             </div>
           ))}
@@ -1143,6 +1234,7 @@ export default function HealthInspector({
                     </div>
                     <HealthItemCard
                       itemName={item.name}
+                      categoryName={category.name}
                       state={itemState[item.id]}
                       onChange={(patch) => setItem(item.id, patch)}
                       onUploadPhoto={(file) => uploadPhoto(item.id, file)}
@@ -1150,6 +1242,10 @@ export default function HealthInspector({
                       resolvePhotoUrl={resolvePhotoUrl}
                       photoBusy={photoUploadState[item.id]?.busy ?? false}
                       photoError={photoUploadState[item.id]?.error ?? null}
+                      saveError={itemSaveErrors[item.id] ?? null}
+                      onRetrySave={() => retryItemSave(item.id)}
+                      phrases={phrases}
+                      zoneTypeIndex={zoneTypeIndex}
                     />
                   </div>
                 ))}
@@ -1173,13 +1269,20 @@ export default function HealthInspector({
                 {reportBusy === 'download' ? 'Generating…' : 'View / Print PDF'}
               </button>
               <button
-                onClick={emailReport}
+                onClick={downloadExcel}
                 disabled={reportBusy !== null}
-                className="flex-1 text-sm font-semibold text-white bg-rsl-navy rounded-xl py-3 disabled:opacity-40"
+                className="flex-1 text-sm font-semibold text-rsl-navy border border-rsl-navy/20 rounded-xl py-3 disabled:opacity-40"
               >
-                {reportBusy === 'email' ? 'Sending…' : 'Email Report'}
+                {reportBusy === 'excel' ? 'Generating…' : 'Download Excel'}
               </button>
             </div>
+            <button
+              onClick={emailReport}
+              disabled={reportBusy !== null}
+              className="w-full text-sm font-semibold text-white bg-rsl-navy rounded-xl py-3 disabled:opacity-40"
+            >
+              {reportBusy === 'email' ? 'Sending…' : 'Email Report'}
+            </button>
             {reportMessage && <p className="text-xs text-center text-rsl-navy/60">{reportMessage}</p>}
             <p className="text-[11px] text-rsl-navy/40 text-center">
               Email currently goes to the test account only, while rslqld.org is pending domain
@@ -1240,6 +1343,7 @@ function SaveIndicator({ status }: { status: SaveStatus }) {
 
 function HealthItemCard({
   itemName,
+  categoryName,
   state,
   onChange,
   onUploadPhoto,
@@ -1247,6 +1351,8 @@ function HealthItemCard({
   resolvePhotoUrl,
   photoBusy,
   photoError,
+  saveError = null,
+  onRetrySave,
   editable = false,
   isEditingName = false,
   editingName = '',
@@ -1258,8 +1364,11 @@ function HealthItemCard({
   deleteBusy = false,
   isDragging = false,
   onDragHandlePointerDown,
+  phrases = [],
+  zoneTypeIndex,
 }: {
   itemName: string;
+  categoryName: string;
   state: ItemState;
   onChange: (patch: Partial<ItemState>) => void;
   onUploadPhoto: (file: File) => void;
@@ -1267,6 +1376,8 @@ function HealthItemCard({
   resolvePhotoUrl: (path: string) => string;
   photoBusy: boolean;
   photoError: string | null;
+  saveError?: string | null;
+  onRetrySave?: () => void;
   editable?: boolean;
   isEditingName?: boolean;
   editingName?: string;
@@ -1278,6 +1389,8 @@ function HealthItemCard({
   deleteBusy?: boolean;
   isDragging?: boolean;
   onDragHandlePointerDown?: () => void;
+  phrases?: Phrase[];
+  zoneTypeIndex?: Map<string, Set<string>>;
 }) {
   const selectId = useId();
   // Photo upload only appears once condition is Fair or worse — matches the
@@ -1413,6 +1526,21 @@ function HealthItemCard({
         </div>
       </div>
 
+      {saveError && (
+        <div className="rounded-lg bg-rsl-red/5 border border-rsl-red/20 px-3 py-2 text-xs text-rsl-red flex items-center justify-between gap-3">
+          <span>Save failed: {saveError}</span>
+          {onRetrySave && (
+            <button
+              type="button"
+              onClick={onRetrySave}
+              className="font-semibold underline shrink-0"
+            >
+              Retry
+            </button>
+          )}
+        </div>
+      )}
+
       <textarea
         value={state.comment}
         onChange={(e) => onChange({ comment: e.target.value })}
@@ -1420,7 +1548,18 @@ function HealthItemCard({
         rows={2}
         className="w-full text-sm border border-rsl-navy/15 rounded-lg px-3 py-2 text-rsl-navy resize-none"
       />
-      <p className="text-[11px] text-rsl-navy/35 -mt-1.5">Tap the mic on your keyboard to dictate</p>
+      <p className="text-[11px] text-rsl-navy/50 -mt-1.5 flex items-center gap-1">
+        🎤 Tap the mic on your keyboard to dictate — fastest way to add detail
+      </p>
+      {zoneTypeIndex && (
+        <PhraseChips
+          phrases={phrases}
+          zoneTypeIndex={zoneTypeIndex}
+          zoneTypeName={categoryName}
+          value={state.comment}
+          onSelect={(next) => onChange({ comment: next })}
+        />
+      )}
 
       {showPhoto && (
         <PhotoUploader
