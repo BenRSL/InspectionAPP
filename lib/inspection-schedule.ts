@@ -30,6 +30,7 @@ export type ScheduledRow = {
   notes: string | null;
   created_by: string | null;
   created_at: string;
+  updated_at: string;
   status: ScheduledStatus;
 };
 
@@ -79,7 +80,7 @@ export async function fetchScheduled(
 ): Promise<ScheduledRow[]> {
   const { data } = await supabase
     .from('scheduled_inspections')
-    .select('id, site_id, inspection_type, scheduled_date, assigned_to, notes, created_by, created_at, status')
+    .select('id, site_id, inspection_type, scheduled_date, assigned_to, notes, created_by, created_at, updated_at, status')
     .in('site_id', siteIds)
     .order('scheduled_date', { ascending: true });
   return data ?? [];
