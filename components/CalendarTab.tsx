@@ -71,6 +71,10 @@ export default function CalendarTab() {
   const [formSendInvite, setFormSendInvite] = useState(true);
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+  // Surfaced by rescheduleRow: either a genuine write failure, or a stale-write
+  // conflict caught by the optimistic-concurrency guard (someone else changed
+  // this booking since the calendar last loaded).
+  const [rescheduleError, setRescheduleError] = useState<string | null>(null);
 
   useEffect(() => {
     (async () => {
@@ -207,7 +211,39 @@ export default function CalendarTab() {
   }
 
   async function rescheduleRow(id: string, newDate: string) {
-    await supabase.from('scheduled_inspections').update({ scheduled_date: newDate }).eq('id', id);
+    const current = scheduled.find((r) => r.id === id);
+    if (!current) {
+      // Not in local state anymore — someone else likely moved or removed it
+      // since this calendar view loaded. Don't guess; just refresh.
+      setRescheduleError('That booking has changed since this page loaded — showing the latest.');
+      await refreshEvents();
+      return;
+    }
+
+    // Optimistic-concurrency guard: only apply the write if updated_at still
+    // matches what we loaded. If another admin changed this row in between,
+    // the .eq('updated_at', ...) clause matches zero rows — the update is a
+    // no-op rather than a silent overwrite of their change.
+    const { data, error } = await supabase
+      .from('scheduled_inspections')
+      .update({ scheduled_date: newDate })
+      .eq('id', id)
+      .eq('updated_at', current.updated_at)
+      .select('id');
+
+    if (error) {
+      setRescheduleError(`Couldn't reschedule: ${error.message}`);
+      await refreshEvents();
+      return;
+    }
+
+    if (!data || data.length === 0) {
+      setRescheduleError('This booking was just changed by someone else — showing the latest instead of overwriting it.');
+      await refreshEvents();
+      return;
+    }
+
+    setRescheduleError(null);
     await refreshEvents();
   }
 
@@ -439,6 +475,19 @@ export default function CalendarTab() {
               {w.email} — {w.count} this month
             </span>
           ))}
+        </div>
+      )}
+
+      {rescheduleError && (
+        <div className="flex items-center justify-between gap-3 rounded-lg bg-rsl-red/5 border border-rsl-red/20 px-3 py-2 text-xs text-rsl-red">
+          <span>{rescheduleError}</span>
+          <button
+            type="button"
+            onClick={() => setRescheduleError(null)}
+            className="font-semibold underline shrink-0"
+          >
+            Dismiss
+          </button>
         </div>
       )}
 
