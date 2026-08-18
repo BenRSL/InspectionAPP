@@ -94,6 +94,12 @@ export default function HealthInspector({
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle');
+  // The real Postgres/network error behind a failed save — previously
+  // discarded entirely, so "Save failed — check connection" was shown even
+  // when the actual cause had nothing to do with connectivity (e.g. a
+  // constraint violation). Kept per-item so a retry can re-attempt exactly
+  // the row that failed rather than requiring the inspector to re-touch it.
+  const [itemSaveErrors, setItemSaveErrors] = useState<Record<string, string>>({});
   const [photoUploadState, setPhotoUploadState] = useState<
     Record<string, { busy: boolean; error: string | null }>
   >({});
@@ -248,10 +254,30 @@ export default function HealthInspector({
 
     pendingSaves.current -= 1;
     if (error) {
+      // Logged rather than silently discarded, so a real cause (constraint
+      // violation, RLS, etc.) is visible in the browser console instead of
+      // being indistinguishable from a genuine network drop.
+      console.error(`SOHC save failed for item ${itemId}:`, error);
       setSaveStatus('error');
+      setItemSaveErrors((prev) => ({ ...prev, [itemId]: error.message }));
     } else if (pendingSaves.current === 0) {
       setSaveStatus('saved');
+      setItemSaveErrors((prev) => {
+        if (!(itemId in prev)) return prev;
+        const next = { ...prev };
+        delete next[itemId];
+        return next;
+      });
     }
+  }
+
+  // Manual retry for an item whose last save failed — re-sends its current
+  // in-memory state rather than requiring the inspector to re-touch the
+  // control that triggered the original save.
+  function retryItemSave(itemId: string) {
+    const state = itemState[itemId];
+    if (!state) return;
+    saveItem(itemId, state);
   }
 
   function setItem(itemId: string, patch: Partial<ItemState>) {
@@ -1085,6 +1111,8 @@ export default function HealthInspector({
                 resolvePhotoUrl={resolvePhotoUrl}
                 photoBusy={photoUploadState[item.id]?.busy ?? false}
                 photoError={photoUploadState[item.id]?.error ?? null}
+                saveError={itemSaveErrors[item.id] ?? null}
+                onRetrySave={() => retryItemSave(item.id)}
                 editable={canEditStructure}
                 isEditingName={editingItemId === item.id}
                 editingName={editingItemName}
@@ -1214,6 +1242,8 @@ export default function HealthInspector({
                       resolvePhotoUrl={resolvePhotoUrl}
                       photoBusy={photoUploadState[item.id]?.busy ?? false}
                       photoError={photoUploadState[item.id]?.error ?? null}
+                      saveError={itemSaveErrors[item.id] ?? null}
+                      onRetrySave={() => retryItemSave(item.id)}
                       phrases={phrases}
                       zoneTypeIndex={zoneTypeIndex}
                     />
@@ -1321,6 +1351,8 @@ function HealthItemCard({
   resolvePhotoUrl,
   photoBusy,
   photoError,
+  saveError = null,
+  onRetrySave,
   editable = false,
   isEditingName = false,
   editingName = '',
@@ -1344,6 +1376,8 @@ function HealthItemCard({
   resolvePhotoUrl: (path: string) => string;
   photoBusy: boolean;
   photoError: string | null;
+  saveError?: string | null;
+  onRetrySave?: () => void;
   editable?: boolean;
   isEditingName?: boolean;
   editingName?: string;
@@ -1492,6 +1526,21 @@ function HealthItemCard({
         </div>
       </div>
 
+      {saveError && (
+        <div className="rounded-lg bg-rsl-red/5 border border-rsl-red/20 px-3 py-2 text-xs text-rsl-red flex items-center justify-between gap-3">
+          <span>Save failed: {saveError}</span>
+          {onRetrySave && (
+            <button
+              type="button"
+              onClick={onRetrySave}
+              className="font-semibold underline shrink-0"
+            >
+              Retry
+            </button>
+          )}
+        </div>
+      )}
+
       <textarea
         value={state.comment}
         onChange={(e) => onChange({ comment: e.target.value })}
@@ -1499,6 +1548,9 @@ function HealthItemCard({
         rows={2}
         className="w-full text-sm border border-rsl-navy/15 rounded-lg px-3 py-2 text-rsl-navy resize-none"
       />
+      <p className="text-[11px] text-rsl-navy/50 -mt-1.5 flex items-center gap-1">
+        🎤 Tap the mic on your keyboard to dictate — fastest way to add detail
+      </p>
       {zoneTypeIndex && (
         <PhraseChips
           phrases={phrases}
@@ -1508,7 +1560,6 @@ function HealthItemCard({
           onSelect={(next) => onChange({ comment: next })}
         />
       )}
-      <p className="text-[11px] text-rsl-navy/35 -mt-1.5">Tap the mic on your keyboard to dictate</p>
 
       {showPhoto && (
         <PhotoUploader

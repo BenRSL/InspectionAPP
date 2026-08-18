@@ -2,7 +2,13 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { supabaseBrowser } from '@/lib/supabase-browser';
-import { type Phrase, type ZoneTypeAssignment, buildZoneTypeIndex, normalizeZoneTypeName } from '@/lib/common-phrases';
+import {
+  type Phrase,
+  type ZoneTypeAssignment,
+  buildZoneTypeIndex,
+  normalizeZoneTypeName,
+  fetchAllZoneTypeAssignments,
+} from '@/lib/common-phrases';
 
 // comment_phrases.category isn't part of the shared Phrase type (Stage 1's
 // Inspector.tsx already splits cleaning/maintenance apart before it ever
@@ -41,6 +47,16 @@ export default function ChipBankTab() {
   const [hoveredZoneType, setHoveredZoneType] = useState<string | null>(null);
   const bucketRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
+  // Brief "✓ Saved" confirmation next to a bucket header once an assignment
+  // genuinely confirms against the database — not on the optimistic drop.
+  const [justSavedZoneType, setJustSavedZoneType] = useState<string | null>(null);
+  const savedFlashTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  function flashSaved(zoneType: string) {
+    setJustSavedZoneType(zoneType);
+    if (savedFlashTimer.current) clearTimeout(savedFlashTimer.current);
+    savedFlashTimer.current = setTimeout(() => setJustSavedZoneType(null), 2000);
+  }
+
   // Phrase text management (add/rename/delete) — mirrors the exact same
   // functions in Inspector.tsx's pencil-icon editor, now also available
   // here so managing the bank doesn't require opening an inspection first.
@@ -56,14 +72,20 @@ export default function ChipBankTab() {
     setLoading(true);
     setLoadError(null);
 
-    const [phrasesRes, assignmentsRes, areasRes, categoriesRes] = await Promise.all([
+    // comment_phrase_zone_types is well past Supabase's default 1000-row Data
+    // API cap (see fetchAllZoneTypeAssignments in lib/common-phrases.ts), so it
+    // must be paginated like every other reader of this table (Inspector.tsx,
+    // HealthInspector.tsx) — a plain .select() here silently truncates and was
+    // the root cause of chips "vanishing" after a reload. Fetched separately
+    // from the Promise.all below since it doesn't return a {data,error} shape.
+    const [phrasesRes, areasRes, categoriesRes, assignmentsData] = await Promise.all([
       supabase.from('comment_phrases').select('id, category, text, keywords').order('text'),
-      supabase.from('comment_phrase_zone_types').select('id, phrase_id, zone_type_name'),
       supabase.from('floor_areas').select('area_name'),
       supabase.from('health_categories').select('category_name'),
+      fetchAllZoneTypeAssignments(supabase),
     ]);
 
-    const firstError = phrasesRes.error || assignmentsRes.error || areasRes.error || categoriesRes.error;
+    const firstError = phrasesRes.error || areasRes.error || categoriesRes.error;
     if (firstError) {
       setLoadError(firstError.message);
       setLoading(false);
@@ -71,7 +93,7 @@ export default function ChipBankTab() {
     }
 
     setPhrases(phrasesRes.data ?? []);
-    setAssignments(assignmentsRes.data ?? []);
+    setAssignments(assignmentsData);
 
     // Dedupe case-insensitively across both sources, keep first-seen casing.
     const seen = new Map<string, string>();
@@ -155,12 +177,37 @@ export default function ChipBankTab() {
       .single();
 
     if (error || !data) {
+      // 23505 = unique_violation. This isn't a real failure — it means the row
+      // already exists (most commonly because an inspector self-curated this
+      // exact phrase/zone pair from Inspector.tsx after this tab's initial
+      // load, per Bible 2.4/2.5). The desired end state — this chip assigned
+      // to this zone — is already true, so quietly fetch and merge the real
+      // row instead of surfacing a raw Postgres error for a no-op.
+      if (error?.code === '23505') {
+        const { data: existing } = await supabase
+          .from('comment_phrase_zone_types')
+          .select('id, phrase_id, zone_type_name')
+          .eq('phrase_id', phraseId)
+          .ilike('zone_type_name', zoneType)
+          .maybeSingle();
+
+        setAssignments((prev) => {
+          const withoutOptimistic = prev.filter((a) => a.id !== optimisticRow.id);
+          if (!existing) return withoutOptimistic; // shouldn't happen, but don't fabricate a row
+          const alreadyPresent = withoutOptimistic.some((a) => a.id === existing.id);
+          return alreadyPresent ? withoutOptimistic : [...withoutOptimistic, existing];
+        });
+        flashSaved(zoneType);
+        return;
+      }
+
       setAssignments((prev) => prev.filter((a) => a.id !== optimisticRow.id));
       setActionError(`Couldn't assign that chip: ${error?.message ?? 'unknown error'}`);
       return;
     }
 
     setAssignments((prev) => prev.map((a) => (a.id === optimisticRow.id ? data : a)));
+    flashSaved(zoneType);
   }
 
   async function unassign(assignment: ZoneTypeAssignment) {
@@ -404,6 +451,9 @@ export default function ChipBankTab() {
                 >
                   <div className="flex items-center gap-2 mb-1.5">
                     <span className="text-sm font-semibold text-rsl-navy">{zoneType}</span>
+                    {justSavedZoneType === zoneType && (
+                      <span className="text-[10px] font-semibold text-pass">✓ Saved</span>
+                    )}
                     {isOrphaned && (
                       <span className="text-[10px] font-semibold uppercase tracking-wide text-rsl-gold bg-rsl-gold/10 rounded-full px-2 py-0.5">
                         No matching area/category
