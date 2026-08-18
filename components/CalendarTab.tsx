@@ -321,7 +321,16 @@ export default function CalendarTab() {
 
   async function removeScheduled(id: string) {
     if (!window.confirm('Remove this scheduled inspection?')) return;
-    await supabase.from('scheduled_inspections').delete().eq('id', id);
+    const { error } = await supabase.from('scheduled_inspections').delete().eq('id', id);
+    if (error) {
+      // Previously discarded entirely — a failed delete (RLS denial, network
+      // blip) looked identical to a successful one, since refreshEvents()
+      // just re-showed whatever was still really there with no explanation.
+      setRescheduleError(`Couldn't remove that booking: ${error.message}`);
+      await refreshEvents();
+      return;
+    }
+    setRescheduleError(null);
     await refreshEvents();
   }
 
