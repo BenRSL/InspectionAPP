@@ -64,6 +64,7 @@ export default function ImportExportTab() {
   const [historyOpen, setHistoryOpen] = useState(false);
   const [history, setHistory] = useState<ImportLogRow[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyError, setHistoryError] = useState<string | null>(null);
 
   useEffect(() => {
     (async () => {
@@ -140,13 +141,23 @@ export default function ImportExportTab() {
   async function loadHistory() {
     if (!selectedSiteId) return;
     setHistoryLoading(true);
+    setHistoryError(null);
     const { data, error } = await supabase
       .from('cost_import_log')
       .select('id, uploaded_by_email, filename, uploaded_at, rows_total, rows_applied, rows_errored')
       .eq('site_id', selectedSiteId)
       .order('uploaded_at', { ascending: false })
       .limit(20);
-    if (!error) setHistory(data ?? []);
+    // Previously discarded on failure, so a real query error (RLS denial,
+    // network issue) looked identical to "no imports logged yet" — an empty
+    // array either way. Now surfaced distinctly so those two states aren't
+    // conflated.
+    if (error) {
+      setHistoryError(error.message);
+      setHistory([]);
+    } else {
+      setHistory(data ?? []);
+    }
     setHistoryLoading(false);
   }
 
@@ -292,7 +303,15 @@ export default function ImportExportTab() {
         {historyOpen && (
           <div className="space-y-2">
             {historyLoading && <p className="text-sm text-rsl-navy/50">Loading…</p>}
-            {!historyLoading && history.length === 0 && (
+            {!historyLoading && historyError && (
+              <div className="rounded-lg bg-rsl-red/5 border border-rsl-red/20 px-3 py-2 text-xs text-rsl-red flex items-center justify-between gap-3">
+                <span>Couldn't load import history: {historyError}</span>
+                <button type="button" onClick={loadHistory} className="font-semibold underline shrink-0">
+                  Retry
+                </button>
+              </div>
+            )}
+            {!historyLoading && !historyError && history.length === 0 && (
               <p className="text-sm text-rsl-navy/40">No imports logged for this site yet.</p>
             )}
             {history.map((h) => (
