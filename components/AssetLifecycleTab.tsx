@@ -52,6 +52,31 @@ const LIFE_LABEL: Record<LifeExpectancyBand, string> = {
   na: 'N/A',
 };
 
+interface ForecastRow {
+  site_id: string;
+  site_name: string;
+  category_name: string;
+  item_name: string;
+  condition: HealthCondition;
+  life_expectancy: LifeExpectancyBand;
+  replacement_cost: number | null;
+  cost_confidence: 'estimated' | 'quoted' | null;
+}
+
+// Life expectancy is captured as a band (0-2 / 3-5 / 6-10 / 10+ years),
+// not an exact year, so a forecast can only bucket at that same
+// resolution — it can't promise a specific financial year. These periods
+// are the honest translation of what the SOHC data actually supports.
+// N/A (life_expectancy = 'na') is excluded entirely — it means the item
+// isn't a depreciating physical asset (e.g. a compliance checklist entry),
+// so it has no meaningful "replacement" timeframe to forecast.
+const FORECAST_PERIODS: { key: 'near' | 'medium' | 'long' | 'beyond'; label: string; band: LifeExpectancyBand }[] = [
+  { key: 'near', label: 'This FY / next FY (0–2 yrs)', band: '0_2' },
+  { key: 'medium', label: 'Medium-term (3–5 yrs)', band: '3_5' },
+  { key: 'long', label: 'Long-term (6–10 yrs)', band: '6_10' },
+  { key: 'beyond', label: 'Beyond 10 yrs', band: '10_plus' },
+];
+
 // Higher score = more urgent. Combines condition and remaining life so an
 // asset that's still in fair condition but expected to fail within 2 years
 // still surfaces near the top, not just the ones already Poor/Critical.
@@ -68,10 +93,19 @@ export default function AssetLifecycleTab() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [noAccess, setNoAccess] = useState(false);
-
   const [rows, setRows] = useState<FlagRow[]>([]);
   const [siteFilter, setSiteFilter] = useState('all');
   const [categoryFilter, setCategoryFilter] = useState('all');
+
+  const [viewMode, setViewMode] = useState<'flagged' | 'forecast'>('flagged');
+  const [forecastRows, setForecastRows] = useState<ForecastRow[]>([]);
+  const [forecastLoading, setForecastLoading] = useState(false);
+  const [forecastError, setForecastError] = useState<string | null>(null);
+  const [forecastLoaded, setForecastLoaded] = useState(false);
+  // Stashed from the initial role-scoping lookup so the forecast query
+  // (loaded lazily, only when the toggle is switched) doesn't need to
+  // redo the auth/role lookup from scratch.
+  const [allowedSiteIds, setAllowedSiteIds] = useState<string[] | null | undefined>(undefined);
 
   useEffect(() => {
     let cancelled = false;
@@ -115,6 +149,8 @@ export default function AssetLifecycleTab() {
         return;
       }
 
+      if (!cancelled) setAllowedSiteIds(allowedSiteIds);
+
       let query = supabase
         .from('v_asset_lifecycle_flags')
         .select(
@@ -140,6 +176,38 @@ export default function AssetLifecycleTab() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    if (viewMode !== 'forecast' || forecastLoaded || allowedSiteIds === undefined) return;
+    let cancelled = false;
+
+    async function loadForecast() {
+      setForecastLoading(true);
+      setForecastError(null);
+
+      let query = supabase
+        .from('v_asset_lifecycle_all')
+        .select('site_id, site_name, category_name, item_name, condition, life_expectancy, replacement_cost, cost_confidence');
+      if (allowedSiteIds !== null) query = query.in('site_id', allowedSiteIds as string[]);
+
+      const { data, error: queryError } = await query;
+
+      if (!cancelled) {
+        if (queryError) {
+          setForecastError(`Could not load the forecast view: ${queryError.message}`);
+        } else {
+          setForecastRows((data as ForecastRow[]) ?? []);
+          setForecastLoaded(true);
+        }
+        setForecastLoading(false);
+      }
+    }
+
+    loadForecast();
+    return () => {
+      cancelled = true;
+    };
+  }, [viewMode, forecastLoaded, allowedSiteIds, supabase]);
 
   const sites = useMemo(() => {
     const seen = new Map<string, string>();
@@ -178,6 +246,50 @@ export default function AssetLifecycleTab() {
     return { quotedTotal, estimatedTotal, costedCount };
   }, [filteredRows]);
 
+  // Buckets every non-N/A asset (regardless of current condition — see the
+  // v_asset_lifecycle_all note above) into its forecast period, keeping
+  // Quoted and Estimated separate within each bucket for the same reason
+  // as the flagged-view summary. Uses the same site filter as the flagged
+  // view so switching between the two tabs stays consistent, but not the
+  // category filter, since a forecast is naturally a portfolio/site-wide
+  // figure rather than a single-category one.
+  const forecastSiteScoped = useMemo(
+    () => forecastRows.filter((r) => siteFilter === 'all' || r.site_id === siteFilter),
+    [forecastRows, siteFilter]
+  );
+
+  const forecastBuckets = useMemo(() => {
+    return FORECAST_PERIODS.map((period) => {
+      const inBand = forecastSiteScoped.filter((r) => r.life_expectancy === period.band);
+      let quotedTotal = 0;
+      let estimatedTotal = 0;
+      let costedCount = 0;
+      for (const r of inBand) {
+        if (r.replacement_cost == null) continue;
+        costedCount += 1;
+        if (r.cost_confidence === 'quoted') quotedTotal += r.replacement_cost;
+        else estimatedTotal += r.replacement_cost;
+      }
+      return { ...period, assetCount: inBand.length, costedCount, quotedTotal, estimatedTotal };
+    });
+  }, [forecastSiteScoped]);
+
+  const forecastNext5 = useMemo(() => {
+    const relevant = forecastBuckets.filter((b) => b.key === 'near' || b.key === 'medium');
+    return {
+      quotedTotal: relevant.reduce((s, b) => s + b.quotedTotal, 0),
+      estimatedTotal: relevant.reduce((s, b) => s + b.estimatedTotal, 0),
+    };
+  }, [forecastBuckets]);
+
+  const forecastNext10 = useMemo(() => {
+    const relevant = forecastBuckets.filter((b) => b.key !== 'beyond');
+    return {
+      quotedTotal: relevant.reduce((s, b) => s + b.quotedTotal, 0),
+      estimatedTotal: relevant.reduce((s, b) => s + b.estimatedTotal, 0),
+    };
+  }, [forecastBuckets]);
+
   if (loading) {
     return <p className="text-sm text-rsl-navy/50 py-12 text-center">Loading asset lifecycle data…</p>;
   }
@@ -198,11 +310,26 @@ export default function AssetLifecycleTab() {
         <div>
           <h2 className="font-display font-bold text-rsl-navy">Asset Lifecycle</h2>
           <p className="text-sm text-rsl-navy/50">
-            Every SOHC asset rated Poor/Critical, or with 0–2 years of life left, from each site's latest
-            completed inspection — worst first, with replacement cost where it's been entered.
+            {viewMode === 'flagged'
+              ? "Every SOHC asset rated Poor/Critical, or with 0–2 years of life left, from each site's latest completed inspection — worst first, with replacement cost where it's been entered."
+              : "Every costed SOHC asset from each site's latest completed inspection, bucketed by remaining life — regardless of current condition."}
           </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-2 items-center">
+          <div className="flex rounded-lg border border-rsl-navy/15 overflow-hidden text-xs font-semibold">
+            <button
+              onClick={() => setViewMode('flagged')}
+              className={`px-3 py-2 ${viewMode === 'flagged' ? 'bg-rsl-navy text-white' : 'text-rsl-navy/60'}`}
+            >
+              Flagged assets
+            </button>
+            <button
+              onClick={() => setViewMode('forecast')}
+              className={`px-3 py-2 ${viewMode === 'forecast' ? 'bg-rsl-navy text-white' : 'text-rsl-navy/60'}`}
+            >
+              Budget forecast
+            </button>
+          </div>
           <select
             value={siteFilter}
             onChange={(e) => setSiteFilter(e.target.value)}
@@ -215,21 +342,25 @@ export default function AssetLifecycleTab() {
               </option>
             ))}
           </select>
-          <select
-            value={categoryFilter}
-            onChange={(e) => setCategoryFilter(e.target.value)}
-            className="text-sm border border-rsl-navy/15 rounded-lg px-3 py-2"
-          >
-            <option value="all">All categories</option>
-            {categories.map((c) => (
-              <option key={c} value={c}>
-                {c}
-              </option>
-            ))}
-          </select>
+          {viewMode === 'flagged' && (
+            <select
+              value={categoryFilter}
+              onChange={(e) => setCategoryFilter(e.target.value)}
+              className="text-sm border border-rsl-navy/15 rounded-lg px-3 py-2"
+            >
+              <option value="all">All categories</option>
+              {categories.map((c) => (
+                <option key={c} value={c}>
+                  {c}
+                </option>
+              ))}
+            </select>
+          )}
         </div>
       </div>
 
+      {viewMode === 'flagged' && (
+        <>
       {rows.length === 0 && (
         <div className="rounded-xl bg-pass/5 border border-pass/20 p-4 text-sm text-rsl-navy/70">
           Nothing flagged right now — no completed SOHC inspection currently has an asset rated Poor/Critical
@@ -338,6 +469,104 @@ export default function AssetLifecycleTab() {
               </div>
             );
           })}
+        </div>
+      )}
+        </>
+      )}
+
+      {viewMode === 'forecast' && (
+        <div className="space-y-4">
+          {forecastLoading && (
+            <p className="text-sm text-rsl-navy/50 py-12 text-center">Loading forecast data…</p>
+          )}
+
+          {forecastError && (
+            <p className="text-sm text-rsl-red font-semibold py-6 text-center">{forecastError}</p>
+          )}
+
+          {!forecastLoading && !forecastError && forecastLoaded && (
+            <>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <ForecastRollupCard label="Next 5 years" totals={forecastNext5} />
+                <ForecastRollupCard label="Next 10 years" totals={forecastNext10} />
+              </div>
+
+              <div className="space-y-3">
+                {forecastBuckets.map((bucket) => (
+                  <div key={bucket.key} className="rounded-xl border border-rsl-navy/10 p-4">
+                    <div className="flex items-center justify-between flex-wrap gap-2">
+                      <p className="font-semibold text-sm text-rsl-navy">{bucket.label}</p>
+                      <p className="text-xs text-rsl-navy/40">
+                        {bucket.costedCount} of {bucket.assetCount} assets costed
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap gap-x-5 gap-y-1 mt-2 text-sm">
+                      {bucket.quotedTotal > 0 && (
+                        <span className="text-rsl-navy/60">
+                          Quoted:{' '}
+                          <span className="font-semibold text-rsl-navy">
+                            ${bucket.quotedTotal.toLocaleString('en-AU', { maximumFractionDigits: 0 })}
+                          </span>
+                        </span>
+                      )}
+                      {bucket.estimatedTotal > 0 && (
+                        <span className="text-rsl-navy/60">
+                          Estimated:{' '}
+                          <span className="font-semibold text-rsl-navy">
+                            ${bucket.estimatedTotal.toLocaleString('en-AU', { maximumFractionDigits: 0 })}
+                          </span>
+                        </span>
+                      )}
+                      {bucket.quotedTotal === 0 && bucket.estimatedTotal === 0 && (
+                        <span className="text-rsl-navy/30">No costed assets in this period yet.</span>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <p className="text-xs text-rsl-navy/40">
+                Life expectancy is captured in bands, not exact years, so these periods are the finest
+                resolution the SOHC data supports — not a specific financial year.
+              </p>
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ForecastRollupCard({
+  label,
+  totals,
+}: {
+  label: string;
+  totals: { quotedTotal: number; estimatedTotal: number };
+}) {
+  const hasAny = totals.quotedTotal > 0 || totals.estimatedTotal > 0;
+  return (
+    <div className="rounded-xl bg-rsl-navy/5 border border-rsl-navy/10 p-4">
+      <p className="text-xs font-semibold uppercase tracking-wide text-rsl-navy/50">{label}</p>
+      {!hasAny && <p className="text-sm text-rsl-navy/30 mt-1">No costed assets in this range yet.</p>}
+      {hasAny && (
+        <div className="flex flex-wrap gap-x-5 gap-y-1 mt-1">
+          {totals.quotedTotal > 0 && (
+            <span className="text-sm text-rsl-navy/60">
+              Quoted:{' '}
+              <span className="font-semibold text-rsl-navy text-base">
+                ${totals.quotedTotal.toLocaleString('en-AU', { maximumFractionDigits: 0 })}
+              </span>
+            </span>
+          )}
+          {totals.estimatedTotal > 0 && (
+            <span className="text-sm text-rsl-navy/60">
+              Estimated:{' '}
+              <span className="font-semibold text-rsl-navy text-base">
+                ${totals.estimatedTotal.toLocaleString('en-AU', { maximumFractionDigits: 0 })}
+              </span>
+            </span>
+          )}
         </div>
       )}
     </div>
