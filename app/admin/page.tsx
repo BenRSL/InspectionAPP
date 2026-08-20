@@ -6,7 +6,7 @@ import { useSearchParams } from 'next/navigation';
 import { supabaseBrowser } from '@/lib/supabase-browser';
 import StatsInsightsTab from '@/components/StatsInsightsTab';
 import ChipBankTab from '@/components/ChipBankTab';
-import AssetCostsTab from '@/components/AssetCostsTab';
+import AssetCostsLifecycleTab from '@/components/AssetCostsLifecycleTab';
 import InspectionHistoryTab from '@/components/InspectionHistoryTab';
 import CalendarTab from '@/components/CalendarTab';
 import TutorialTab from '@/components/TutorialTab';
@@ -143,7 +143,7 @@ function AdminPageInner() {
               ['sites', 'Sites'],
               ['areas', 'Areas & Checklist Items'],
               ['insights', 'Stats & Insights'],
-              ['costs', 'Asset Costs'],
+              ['costs', 'Asset Costs & Lifecycle'],
               ['calendar', 'Calendar'],
               ['history', 'Inspection History'],
               ['chips', 'Chip Bank'],
@@ -201,9 +201,10 @@ function AdminPageInner() {
               {tab === 'insights' && <StatsInsightsTab />}
               {tab === 'chips' && <ChipBankTab />}
               {tab === 'costs' && (
-                <AssetCostsTab
+                <AssetCostsLifecycleTab
                   initialSiteId={crossLinkSiteId}
                   highlightItemName={crossLinkItemName}
+                  initialView="costs"
                 />
               )}
               {tab === 'calendar' && <CalendarTab />}
