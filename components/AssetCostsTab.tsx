@@ -162,8 +162,8 @@ export default function AssetCostsTab({
     <div className="space-y-4">
       <p className="text-sm text-rsl-navy/60">
         Enter an estimated or quoted replacement cost for any SOHC asset. This is optional and independent of
-        the inspection checklist — inspectors never see or edit these figures. Costs feed the upcoming
-        Asset Lifecycle $-at-risk view once enough are filled in.
+        the inspection checklist — inspectors never see or edit these figures. Costs entered here now show
+        directly on the Asset Lifecycle $-at-risk view.
       </p>
 
       <div className="flex items-center gap-3 flex-wrap">

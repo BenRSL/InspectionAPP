@@ -12,10 +12,11 @@ import type { HealthCondition, LifeExpectancyBand } from '@/lib/health';
 // health_inspections -> sites, restricted to each site's latest completed
 // year. This screen just filters (site, category) and orders by severity.
 //
-// No dollar figures here on purpose — cost tracking is deferred pending
-// either the Excel import work (Bible 8.4 Stages 3–4) or a possible future
-// Archibus integration, both out of scope for now. Instead, flagged assets
-// get a plain-language budget-forecast reminder.
+// Cost figures (replacement_cost, cost_confidence) now flow through from
+// the view too, entered separately in Admin > Asset Costs. Estimated and
+// Quoted totals are kept visually separate rather than blended into one
+// number — a budget figure built from a mix of guesses and real quotes,
+// summed as if equally reliable, is misleading for actual planning.
 
 interface FlagRow {
   site_id: string;
@@ -25,6 +26,8 @@ interface FlagRow {
   condition: HealthCondition;
   life_expectancy: LifeExpectancyBand;
   comment: string | null;
+  replacement_cost: number | null;
+  cost_confidence: 'estimated' | 'quoted' | null;
 }
 
 const CONDITION_LABEL: Record<HealthCondition, string> = {
@@ -114,7 +117,9 @@ export default function AssetLifecycleTab() {
 
       let query = supabase
         .from('v_asset_lifecycle_flags')
-        .select('site_id, site_name, category_name, item_name, condition, life_expectancy, comment');
+        .select(
+          'site_id, site_name, category_name, item_name, condition, life_expectancy, comment, replacement_cost, cost_confidence'
+        );
       if (allowedSiteIds !== null) query = query.in('site_id', allowedSiteIds);
 
       const { data, error: queryError } = await query;
@@ -155,6 +160,24 @@ export default function AssetLifecycleTab() {
       .sort((a, b) => severityScore(b) - severityScore(a));
   }, [rows, siteFilter, categoryFilter]);
 
+  // Quoted and Estimated kept as separate totals rather than one blended
+  // number — see the file-header note on why. costedCount / rows.length
+  // makes the coverage gap visible too, since a total built from a
+  // minority of costed assets could otherwise look more complete than it
+  // is.
+  const costSummary = useMemo(() => {
+    let quotedTotal = 0;
+    let estimatedTotal = 0;
+    let costedCount = 0;
+    for (const r of filteredRows) {
+      if (r.replacement_cost == null) continue;
+      costedCount += 1;
+      if (r.cost_confidence === 'quoted') quotedTotal += r.replacement_cost;
+      else estimatedTotal += r.replacement_cost;
+    }
+    return { quotedTotal, estimatedTotal, costedCount };
+  }, [filteredRows]);
+
   if (loading) {
     return <p className="text-sm text-rsl-navy/50 py-12 text-center">Loading asset lifecycle data…</p>;
   }
@@ -176,7 +199,7 @@ export default function AssetLifecycleTab() {
           <h2 className="font-display font-bold text-rsl-navy">Asset Lifecycle</h2>
           <p className="text-sm text-rsl-navy/50">
             Every SOHC asset rated Poor/Critical, or with 0–2 years of life left, from each site's latest
-            completed inspection — worst first.
+            completed inspection — worst first, with replacement cost where it's been entered.
           </p>
         </div>
         <div className="flex gap-2">
@@ -214,6 +237,37 @@ export default function AssetLifecycleTab() {
         </div>
       )}
 
+      {filteredRows.length > 0 && (
+        <div className="rounded-xl bg-rsl-navy/5 border border-rsl-navy/10 p-4 flex flex-wrap gap-x-6 gap-y-1 text-sm">
+          <span className="text-rsl-navy/60">
+            <span className="font-semibold text-rsl-navy">{costSummary.costedCount}</span> of{' '}
+            {filteredRows.length} flagged assets have a cost entered
+          </span>
+          {costSummary.quotedTotal > 0 && (
+            <span className="text-rsl-navy/60">
+              Quoted:{' '}
+              <span className="font-semibold text-rsl-navy">
+                ${costSummary.quotedTotal.toLocaleString('en-AU', { maximumFractionDigits: 0 })}
+              </span>
+            </span>
+          )}
+          {costSummary.estimatedTotal > 0 && (
+            <span className="text-rsl-navy/60">
+              Estimated:{' '}
+              <span className="font-semibold text-rsl-navy">
+                ${costSummary.estimatedTotal.toLocaleString('en-AU', { maximumFractionDigits: 0 })}
+              </span>
+            </span>
+          )}
+          {costSummary.costedCount < filteredRows.length && (
+            <span className="text-rsl-navy/40">
+              ({filteredRows.length - costSummary.costedCount} not yet costed — figures above understate the
+              real total)
+            </span>
+          )}
+        </div>
+      )}
+
       {rows.length > 0 && filteredRows.length === 0 && (
         <p className="text-sm text-rsl-navy/40 py-6 text-center">No flagged assets match that filter.</p>
       )}
@@ -242,6 +296,16 @@ export default function AssetLifecycleTab() {
                     <span className="text-[10px] font-semibold uppercase tracking-wide rounded-full px-2 py-0.5 text-rsl-navy/60 bg-rsl-navy/5">
                       {LIFE_LABEL[row.life_expectancy]} left
                     </span>
+                    {row.replacement_cost != null ? (
+                      <span className="text-[10px] font-semibold uppercase tracking-wide rounded-full px-2 py-0.5 text-rsl-navy/70 bg-rsl-navy/5 border border-rsl-navy/10">
+                        ${row.replacement_cost.toLocaleString('en-AU', { maximumFractionDigits: 0 })}
+                        {row.cost_confidence ? ` · ${row.cost_confidence}` : ''}
+                      </span>
+                    ) : (
+                      <span className="text-[10px] font-semibold uppercase tracking-wide rounded-full px-2 py-0.5 text-rsl-navy/30 bg-rsl-navy/5">
+                        No cost entered
+                      </span>
+                    )}
                     <button
                       onClick={() =>
                         router.push(
